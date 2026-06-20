@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="PTCenter.Api/PTCenter.Api.csproj" />
+  <Project Path="PTCenter.Application/PTCenter.Application.csproj" />
+  <Project Path="PTCenter.Domain/PTCenter.Domain.csproj" />
+  <Project Path="PTCenter.Infrastructure/PTCenter.Infrastructure.csproj" />
+</Solution>
