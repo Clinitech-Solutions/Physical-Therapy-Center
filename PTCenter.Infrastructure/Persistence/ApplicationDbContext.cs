@@ -8,7 +8,7 @@ namespace PTCenter.Infrastructure.Persistence;
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<ApplicationUser> ApplicationUsers { get; set; } = null!;
-
+    
     public DbSet<Patient> Patients { get; set; }
 
     public DbSet<InsuranceCompany> InsuranceCompanies { get; set; }
@@ -39,8 +39,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<OTPVerify> OTPVerifies { get; set; }
-
-
+    
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
@@ -52,7 +52,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         ApplySoftDelete();
         return base.SaveChanges();
     }
-
+    
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         ApplySoftDelete();
