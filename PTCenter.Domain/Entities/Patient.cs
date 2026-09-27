@@ -5,8 +5,8 @@ public class Patient : BaseEntity
 {
     public int Id { get; set; }
     public string ApplicationUserId { get; set; } = null!;
-    public string PaymentType { get; set; } = null!;
-    public string EmergencyContact { get; set; } = null!;
+    public string? PaymentType { get; set; }
+    public string? EmergencyContact { get; set; }
     public int? InsuranceCompanyId { get; set; }
 
     public ApplicationUser ApplicationUser { get; set; } = null!;

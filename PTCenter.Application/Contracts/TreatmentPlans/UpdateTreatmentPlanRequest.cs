@@ -1,0 +1,23 @@
+﻿using PTCenter.Domain.Entities;
+using PTCenter.Domain.Entities.Enums;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace PTCenter.Application.Contracts.TreatmentPlans
+{
+    public class UpdateTreatmentPlanRequest
+    {
+        public string DoctorId { get; set; } = null!;
+
+        public int NumberOfSessions { get; set; }
+
+        public int FrequencyPerWeek { get; set; }
+
+        public string TreatmentType { get; set; } = null!;
+
+        public string? Exercises { get; set; }
+
+        public StatusPlan Status { get; set; }
+    }
+}

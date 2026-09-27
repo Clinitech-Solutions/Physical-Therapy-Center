@@ -1,9 +1,7 @@
+using PTCenter.Domain.Entities.Enums;
+
 namespace PTCenter.Domain.Entities;
-public enum StatusPlan
-{
-    Active,
-    NotActive,
-}
+
 public class TreatmentPlan : BaseEntity
 {
     public int Id { get; set; }

@@ -7,7 +7,7 @@ namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]/[action]")]
-[Authorize(Roles = DefaultRoles.Admin.Name + "," + DefaultRoles.Owner.Name)]
+[Authorize(Roles = DefaultRoles.Admin.Name + "," + DefaultRoles.Owner.Name+"," + DefaultRoles.Ceo.Name)]
 public class UsersController(IUserService userService) : ControllerBase 
 {
     private readonly IUserService _userService = userService;
@@ -20,7 +20,22 @@ public class UsersController(IUserService userService) : ControllerBase
         var result = await _userService.AddAsync(request);
         return result.IsSuccess ? Ok(result.Value) : result.ToProblem();
     }
-    
+    [HttpPost]
+
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Update(string userId, UpdateUserRequest request)
+    {
+        var result = await _userService.UpdateAsync(userId, request);
+        return result.IsSuccess ? Ok(result.Value) : result.ToProblem();
+    }
+    [HttpDelete]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Delete(string userId)
+    {
+        var result = await _userService.DeleteAsync(userId);
+        return result.IsSuccess ? Ok() : result.ToProblem();
+    }
+
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()

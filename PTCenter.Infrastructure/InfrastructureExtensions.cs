@@ -32,7 +32,14 @@ public static class InfrastructureExtensions
         private IServiceCollection AddServices()
         {
             services.AddScoped<IUserService, UserService>();
-            
+            services.AddScoped<IPatientService, PatientService>();
+            services.AddScoped<IInsuranceCompanyService, InsuranceCompanyService>();
+            services.AddScoped<IInsuranceDocumentService, InsuranceDocumentService>();
+            services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
+            services.AddScoped<ITreatmentPlanSessionService, TreatmentPlanSessionService>();
+            services.AddScoped<IAssessmentService, AssessmentService>();
+
+
             return services;
         }
 
@@ -52,6 +59,7 @@ public static class InfrastructureExtensions
             services.AddScoped<IAuthService, AuthService>();
             services.AddSingleton<IJwtProvider, JwtProvider>();
             services.AddTransient<IEmailSender, EmailSender>();
+            
 
             services.AddOptions<JwtOptions>()
                 .BindConfiguration(JwtOptions.SectionName)

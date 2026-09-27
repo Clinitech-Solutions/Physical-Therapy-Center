@@ -12,19 +12,26 @@ builder.Services
     .AddInfrastructureExtensions(builder.Configuration);
 
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+
+// OpenAPI + Scalar
+app.MapOpenApi();
+
+app.MapScalarApiReference(options =>
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
-}
+    options
+        .WithTitle("PT Center API");
+});
+
 
 app.UseHttpsRedirection();
+
+// CORS
+app.UseCors("MyPolicy");
 
 app.UseAuthorization();
 

@@ -1,4 +1,7 @@
-﻿namespace PTCenter.Application.Contracts.Users;
+﻿
+using PTCenter.Domain.Entities.Enums;
+
+namespace PTCenter.Application.Contracts.Users;
 
 public class UserResponse
 {
@@ -6,5 +9,12 @@ public class UserResponse
 
     public string UserName { get; set; } = null!;
 
+    public string FullName { get; set; } = null!;
+
+    public Gender Gender { get; set; }
+
+    public DateTime BirthDate { get; set; }
+
     public IEnumerable<string> Roles { get; set; } = [];
 }
+

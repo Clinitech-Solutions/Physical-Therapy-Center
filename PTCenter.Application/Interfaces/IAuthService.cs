@@ -10,4 +10,9 @@ public interface IAuthService
     Task<Result<AuthResponse>> VerifyRegisterAsync(VerifyRegisterRequest request);
     Task<Result> ResendOtpAsync(ResendOtpRequest request);
     Task<Result<AuthResponse>> GoogleLoginAsync(GoogleLoginRequest request);
+    Task<Result> ForgotPasswordAsync(ForgotPasswordRequest request);
+
+    Task<Result> VerifyForgotPasswordOtpAsync(VerifyForgotPasswordRequest request);
+
+    Task<Result> ResetPasswordAsync(ResetPasswordRequest request);
 }
