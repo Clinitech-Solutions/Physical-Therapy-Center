@@ -22,6 +22,74 @@ namespace PTCenter.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Assessment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AssessmentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ConditionType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Diagnosis")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SeniorId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("SeniorId");
+
+                    b.ToTable("Assessments");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -58,6 +126,13 @@ namespace PTCenter.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = "0191d311-2918-7f76-bd8a-0bdf740adff8",
+                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11384",
+                            Name = "Owner",
+                            NormalizedName = "OWNER"
+                        },
+                        new
+                        {
                             Id = "0191d311-2918-7f76-bd8a-0bdf740adff9",
                             ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11385",
                             Name = "Doctor",
@@ -72,10 +147,24 @@ namespace PTCenter.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = "0191d311-2918-7f76-bd8a-0bdf740adff8",
-                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11384",
-                            Name = "Owner",
-                            NormalizedName = "OWNER"
+                            Id = "0191d311-2918-7f76-bd8a-0bdf740adffa",
+                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11386",
+                            Name = "Senior",
+                            NormalizedName = "SENIOR"
+                        },
+                        new
+                        {
+                            Id = "0191d311-2918-7f76-bd8a-0bdf740adffb",
+                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11387",
+                            Name = "Receptionist",
+                            NormalizedName = "RECEPTIONIST"
+                        },
+                        new
+                        {
+                            Id = "0191d311-2918-7f76-bd8a-0bdf740adffc",
+                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11388",
+                            Name = "Ceo",
+                            NormalizedName = "CEO"
                         });
                 });
 
@@ -274,15 +363,15 @@ namespace PTCenter.Infrastructure.Migrations
                             BirthDate = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             ConcurrencyStamp = "5c8298a9-982f-4d9d-a632-55f7d148f735",
                             EmailConfirmed = true,
-                            FullName = "admin",
+                            FullName = "SuperAdmin",
                             Gender = 0,
                             LockoutEnabled = false,
-                            NormalizedUserName = "ADMIN",
+                            NormalizedUserName = "SUPERADMIN",
                             PasswordHash = "AQAAAAIAAYagAAAAEBR+Y7x+hwxcWdCxy1/N9XLtsTZzDGyQIzCdCL+TqELwC1bCOWfdAocAfC5X2xNOZA==",
                             PhoneNumberConfirmed = false,
                             SecurityStamp = "6f3a18b3-c453-4a3a-b2e3-57f2e0429f50",
                             TwoFactorEnabled = false,
-                            UserName = "admin"
+                            UserName = "SuperAdmin"
                         });
                 });
 
@@ -346,74 +435,6 @@ namespace PTCenter.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Appointments");
-                });
-
-            modelBuilder.Entity("PTCenter.Domain.Entities.Assessment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("AssessmentDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ConditionType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Diagnosis")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("PatientId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("SeniorId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PatientId");
-
-                    b.HasIndex("SeniorId");
-
-                    b.ToTable("Assessments");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.DoctorAbsence", b =>
@@ -770,7 +791,6 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("EmergencyContact")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("InsuranceCompanyId")
@@ -780,7 +800,6 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<string>("PaymentType")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -1063,6 +1082,12 @@ namespace PTCenter.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("CheckIn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("CheckOut")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1081,6 +1106,12 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("PaymentStatus")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SessionDate")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("SessionNumber")
                         .HasColumnType("int");
 
@@ -1098,9 +1129,29 @@ namespace PTCenter.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TreatmentPlanId");
+                    b.HasIndex("TreatmentPlanId", "SessionNumber")
+                        .IsUnique();
 
                     b.ToTable("TreatmentPlanSessions");
+                });
+
+            modelBuilder.Entity("Assessment", b =>
+                {
+                    b.HasOne("PTCenter.Domain.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PTCenter.Domain.Entities.ApplicationUser", "Senior")
+                        .WithMany()
+                        .HasForeignKey("SeniorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Senior");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -1152,25 +1203,6 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("PTCenter.Domain.Entities.Assessment", b =>
-                {
-                    b.HasOne("PTCenter.Domain.Entities.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("PTCenter.Domain.Entities.ApplicationUser", "Senior")
-                        .WithMany()
-                        .HasForeignKey("SeniorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Patient");
-
-                    b.Navigation("Senior");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.DoctorSchedule", b =>
@@ -1226,7 +1258,7 @@ namespace PTCenter.Infrastructure.Migrations
 
             modelBuilder.Entity("PTCenter.Domain.Entities.TreatmentPlan", b =>
                 {
-                    b.HasOne("PTCenter.Domain.Entities.Assessment", "Assessment")
+                    b.HasOne("Assessment", "Assessment")
                         .WithOne("TreatmentPlan")
                         .HasForeignKey("PTCenter.Domain.Entities.TreatmentPlan", "AssessmentId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -1254,14 +1286,14 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Navigation("TreatmentPlan");
                 });
 
+            modelBuilder.Entity("Assessment", b =>
+                {
+                    b.Navigation("TreatmentPlan");
+                });
+
             modelBuilder.Entity("PTCenter.Domain.Entities.ApplicationUser", b =>
                 {
                     b.Navigation("Patients");
-                });
-
-            modelBuilder.Entity("PTCenter.Domain.Entities.Assessment", b =>
-                {
-                    b.Navigation("TreatmentPlan");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.InsuranceCompany", b =>

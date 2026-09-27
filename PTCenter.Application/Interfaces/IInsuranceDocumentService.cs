@@ -1,0 +1,20 @@
+﻿using PTCenter.Application.Abstractions;
+using PTCenter.Application.Contracts.InsuranceDocument;
+
+namespace PTCenter.Application.Interfaces;
+
+public interface IInsuranceDocumentService
+{
+    Task<Result<InsuranceDocumentResponse>> AddAsync(
+        CreateInsuranceDocumentRequest request);
+
+    Task<Result<List<InsuranceDocumentResponse>>> GetAllAsync();
+
+    Task<Result<InsuranceDocumentResponse>> GetByIdAsync(int id);
+
+    Task<Result<InsuranceDocumentResponse>> UpdateAsync(
+        int id,
+        UpdateInsuranceDocumentRequest request);
+
+    Task<Result> DeleteAsync(int id);
+}

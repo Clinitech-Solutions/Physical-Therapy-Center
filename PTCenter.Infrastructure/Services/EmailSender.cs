@@ -14,14 +14,14 @@ namespace PTCenter.Infrastructure.Services
                     EnableSsl = true,
                     UseDefaultCredentials = false,
                     Credentials = new NetworkCredential(
-                        "minaromany155@gmail.com",
-                        "sdbz miri hcdr htto"
+                        "clinitechsolutions65@gmail.com",
+                        "fqqc rggu nlio zmrt"
                     )
                 };
 
                 using var message = new MailMessage
                 {
-                    From = new MailAddress("minaromany155@gmail.com"),
+                    From = new MailAddress("clinitechsolutions65@gmail.com"),
                     Subject = subject,
                     Body = htmlMessage,
                     IsBodyHtml = true

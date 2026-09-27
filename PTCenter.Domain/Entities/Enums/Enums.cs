@@ -18,6 +18,7 @@ namespace PTCenter.Domain.Entities.Enums
     public enum SessionStatus
     {
         Pending,
+        InProgress,
         Completed,
         Cancelled
     }
@@ -34,11 +35,16 @@ namespace PTCenter.Domain.Entities.Enums
         Paid,
         Cancelled
     }
+    public enum StatusPlan
+    {
+        Active,
+        Inactive,
+        
+    }
     public enum PaymentStatus
     {
         Pending,
-        Completed,
-        Failed,
-        Refunded
+        Paid,
+        PackageCovered
     }
 }

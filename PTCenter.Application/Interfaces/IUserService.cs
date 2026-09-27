@@ -13,4 +13,9 @@ public interface IUserService
     Task<Result<List<UserResponse>>> GetAllAsync();
     
     Task<Result<UserResponse>> AddAsync(CreateUserRequest request);
+    Task<Result<UserResponse>> UpdateAsync(
+    string userId,
+    UpdateUserRequest request);
+
+    Task<Result> DeleteAsync(string userId);
 }

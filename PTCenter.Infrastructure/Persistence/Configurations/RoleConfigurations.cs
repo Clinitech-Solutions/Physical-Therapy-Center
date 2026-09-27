@@ -36,7 +36,29 @@ public class RoleConfigurations : IEntityTypeConfiguration<IdentityRole>
                 NormalizedName = DefaultRoles.Owner.Name.ToUpper(),
                 ConcurrencyStamp = DefaultRoles.Owner.ConcurrencyStamp,
             },
-            
+            new IdentityRole(){
+                Id = DefaultRoles.Receptionist.Id,
+                Name = DefaultRoles.Receptionist.Name,
+                NormalizedName = DefaultRoles.Receptionist.Name.ToUpper(),
+                ConcurrencyStamp = DefaultRoles.Receptionist.ConcurrencyStamp,
+            },
+            new IdentityRole()
+{
+    Id = DefaultRoles.Senior.Id,
+    Name = DefaultRoles.Senior.Name,
+    NormalizedName = DefaultRoles.Senior.Name.ToUpper(),
+    ConcurrencyStamp = DefaultRoles.Senior.ConcurrencyStamp,
+},
+
+new IdentityRole()
+{
+    Id = DefaultRoles.Ceo.Id,
+    Name = DefaultRoles.Ceo.Name,
+    NormalizedName = DefaultRoles.Ceo.Name.ToUpper(),
+    ConcurrencyStamp = DefaultRoles.Ceo.ConcurrencyStamp,
+},
+
+
         };
         
         builder.HasData(roles);
