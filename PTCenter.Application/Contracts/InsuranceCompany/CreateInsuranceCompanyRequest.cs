@@ -13,6 +13,7 @@ namespace PTCenter.Application.Contracts.InsuranceCompany
 
         [Url]
         public string? PortalUrl { get; set; }
+        public string? Hotline { get; set; } // أضف هذا الحقل
 
         public bool IsActive { get; set; } = true;
     }

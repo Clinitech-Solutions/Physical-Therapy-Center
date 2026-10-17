@@ -27,7 +27,7 @@ namespace PTCenter.Application.Contracts.Patients
 
         [MaxLength(20)]
         public string? EmergencyContact { get; set; }
-
+        public InsuranceDetailsDto? InsuranceDetails { get; set; }
         public int? InsuranceCompanyId { get; set; }
     }
 }

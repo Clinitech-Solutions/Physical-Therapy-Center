@@ -17,8 +17,7 @@ namespace PTCenter.Application.Contracts.Patients
 
         public string PhoneNumber { get; set; } = null!;
 
-        public DateTime BrithDay { get; set; }
-
+        public DateTime BirthDate { get; set; } // تم تصحيح الاسم هنا من brithDay إلى BirthDate
         public string? PaymentType { get; set; }
 
         public string? EmergencyContact { get; set; }
@@ -27,6 +26,7 @@ namespace PTCenter.Application.Contracts.Patients
         public Gender Gender { get; set; }
 
         public string? InsuranceCompanyName { get; set; }
+        public InsuranceDetailsDto? InsuranceDetails { get; set; }
 
         public DateTime CreatedAt { get; set; }
     }

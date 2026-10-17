@@ -24,27 +24,47 @@ namespace PTCenter.Domain.Entities.Enums
     }
     public enum AppointmentStatus
     {
-        Scheduled,
+        Pending,
         Completed,
         Cancelled,
         NoShow
     }
-    public enum InvoiceStatus
-    {
-        Pending,
-        Paid,
-        Cancelled
-    }
+    
     public enum StatusPlan
     {
         Active,
         Inactive,
         
     }
+    
+    public enum InvoiceStatus
+    {
+        Pending,
+        Paid,
+        Cancelled,
+        Waived
+    }
+
     public enum PaymentStatus
     {
         Pending,
         Paid,
         PackageCovered
+    }
+
+    public enum InvoiceType
+    {
+        Assessment,
+        Session,
+        Installment
+    }
+
+    public enum PaymentMethod
+    {
+        Cash,
+        Visa,
+        EWallet,
+        BankTransfer,
+        Insurance
     }
 }

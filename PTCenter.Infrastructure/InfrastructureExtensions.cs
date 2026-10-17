@@ -1,16 +1,17 @@
-﻿using System.Security.Claims;
-using System.Text;
-using PTCenter.Application.Interfaces;
-using PTCenter.Domain.Entities;
-using PTCenter.Infrastructure.Options;
-using PTCenter.Infrastructure.Persistence;
-using PTCenter.Infrastructure.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using PTCenter.Application.Interfaces;
+using PTCenter.Application.Services;
+using PTCenter.Domain.Entities;
+using PTCenter.Infrastructure.Options;
+using PTCenter.Infrastructure.Persistence;
+using PTCenter.Infrastructure.Services;
+using System.Security.Claims;
+using System.Text;
 
 namespace PTCenter.Infrastructure;
 
@@ -38,7 +39,9 @@ public static class InfrastructureExtensions
             services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
             services.AddScoped<ITreatmentPlanSessionService, TreatmentPlanSessionService>();
             services.AddScoped<IAssessmentService, AssessmentService>();
-
+            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IReceptionistService, ReceptionistService>();
+            services.AddScoped<IBillingService, BillingService>();
 
             return services;
         }

@@ -1,5 +1,4 @@
-﻿
-using Mapster;
+﻿using Mapster;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -10,13 +9,13 @@ using PTCenter.Application.Interfaces;
 using PTCenter.Domain.Entities;
 using PTCenter.Domain.Errors;
 using PTCenter.Infrastructure.Persistence;
-using static System.Net.WebRequestMethods;
 
 namespace PTCenter.Infrastructure.Services;
 
 public class PatientService(
     ApplicationDbContext context,
-    UserManager<ApplicationUser> userManager, IEmailSender emailSender)
+    UserManager<ApplicationUser> userManager,
+    IEmailSender emailSender)
     : IPatientService
 {
     private readonly ApplicationDbContext _context = context;
@@ -90,6 +89,7 @@ public class PatientService(
             response.FullName = user.FullName;
             response.Email = user.Email!;
             response.PhoneNumber = user.PhoneNumber!;
+            response.BirthDate = user.BirthDate;
 
             if (patient.InsuranceCompanyId.HasValue)
             {
@@ -105,82 +105,63 @@ public class PatientService(
                     user.Email!,
                     "Mediqova - Account Password",
                     $"""
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Mediqova</title>
-                </head>
-                <body style="margin:0;padding:0;background:#f4f7fb;font-family:'Segoe UI',Arial,sans-serif;">
-
-                    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:40px 0;">
-                        <tr>
-                            <td align="center">
-
-                                <table width="600" cellpadding="0" cellspacing="0"
-                                       style="background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-
-                                    <tr>
-                                        <td style="background:linear-gradient(135deg,#0F4C81,#1E88E5);padding:40px;text-align:center;">
-                                            <div style="width:72px;height:72px;margin:auto;background:#fff;border-radius:50%;line-height:72px;font-size:34px;">
-                                                🏥
-                                            </div>
-
-                                            <h1 style="margin:20px 0 8px;color:white;">
-                                                Mediqova
-                                            </h1>
-
-                                            <p style="margin:0;color:#dbeafe;">
-                                                Powered by Clinitech Solutions
-                                            </p>
-                                        </td>
-                                    </tr>
-
-                                    <tr>
-                                        <td style="padding:45px;">
-
-                                            <h2>Welcome to Mediqova 👋</h2>
-
-                                            <p style="font-size:16px;color:#4b5563;">
-                                                Your account has been created successfully.
-                                            </p>
-
-                                            <p style="font-size:16px;color:#4b5563;">
-                                                Your temporary password is:
-                                            </p>
-
-                                            <div style="margin:30px auto;width:280px;background:#eff6ff;border:2px dashed #1E88E5;border-radius:12px;padding:20px;text-align:center;">
-
-                                                <div style="font-size:34px;font-weight:bold;letter-spacing:5px;color:#0F4C81;">
-                                                    {password}
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <title>Mediqova</title>
+                    </head>
+                    <body style="margin:0;padding:0;background:#f4f7fb;font-family:'Segoe UI',Arial,sans-serif;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:40px 0;">
+                            <tr>
+                                <td align="center">
+                                    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
+                                        <tr>
+                                            <td style="background:linear-gradient(135deg,#0F4C81,#1E88E5);padding:40px;text-align:center;">
+                                                <div style="width:72px;height:72px;margin:auto;background:#fff;border-radius:50%;line-height:72px;font-size:34px;">
+                                                    🏥
                                                 </div>
-
-                                            </div>
-
-                                            <p style="color:#dc2626;font-weight:bold;text-align:center;">
-                                                Please change your password after your first login.
-                                            </p>
-
-                                        </td>
-                                    </tr>
-
-                                    <tr>
-                                        <td style="background:#f9fafb;padding:25px;text-align:center;">
-                                            <strong>Clinitech Solutions</strong>
-                                            <br />
-                                            <small>© 2026 Mediqova. All rights reserved.</small>
-                                        </td>
-                                    </tr>
-
-                                </table>
-
-                            </td>
-                        </tr>
-                    </table>
-
-                </body>
-                </html>
-                """);
+                                                <h1 style="margin:20px 0 8px;color:white;">
+                                                    Mediqova
+                                                </h1>
+                                                <p style="margin:0;color:#dbeafe;">
+                                                    Powered by Clinitech Solutions
+                                                </p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding:45px;">
+                                                <h2>Welcome to Mediqova 👋</h2>
+                                                <p style="font-size:16px;color:#4b5563;">
+                                                    Your account has been created successfully.
+                                                </p>
+                                                <p style="font-size:16px;color:#4b5563;">
+                                                    Your temporary password is:
+                                                </p>
+                                                <div style="margin:30px auto;width:280px;background:#eff6ff;border:2px dashed #1E88E5;border-radius:12px;padding:20px;text-align:center;">
+                                                    <div style="font-size:34px;font-weight:bold;letter-spacing:5px;color:#0F4C81;">
+                                                        {password}
+                                                    </div>
+                                                </div>
+                                                <p style="color:#dc2626;font-weight:bold;text-align:center;">
+                                                    Please change your password after your first login.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="background:#f9fafb;padding:25px;text-align:center;">
+                                                <strong>Clinitech Solutions</strong>
+                                                <br />
+                                                <small>© 2026 Mediqova. All rights reserved.</small>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </body>
+                    </html>
+                    """);
             }
             catch
             {
@@ -199,10 +180,9 @@ public class PatientService(
             throw;
         }
     }
-    public async Task<Result<PagedResponse<PatientResponse>>> GetAllAsync(
-        PatientQueryRequest request)
+
+    public async Task<Result<PagedResponse<PatientResponse>>> GetAllAsync(PatientQueryRequest request)
     {
-        // Validate pagination
         if (request.PageNumber < 1)
             request.PageNumber = 1;
 
@@ -218,7 +198,6 @@ public class PatientService(
             .AsNoTracking()
             .AsQueryable();
 
-        // Search by name OR phone
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var search = request.Search.Trim();
@@ -228,27 +207,19 @@ public class PatientService(
                 x.ApplicationUser.PhoneNumber!.Contains(search));
         }
 
-        // Payment filter
         if (!string.IsNullOrWhiteSpace(request.PaymentType))
         {
-            query = query.Where(x =>
-                x.PaymentType == request.PaymentType);
+            query = query.Where(x => x.PaymentType == request.PaymentType);
         }
 
-        // Insurance Company filter
         if (request.InsuranceCompanyId.HasValue)
         {
-            query = query.Where(x =>
-                x.InsuranceCompanyId == request.InsuranceCompanyId.Value);
+            query = query.Where(x => x.InsuranceCompanyId == request.InsuranceCompanyId.Value);
         }
 
-        // Total count BEFORE pagination
         var totalCount = await query.CountAsync();
+        var totalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize);
 
-        var totalPages = (int)Math.Ceiling(
-            totalCount / (double)request.PageSize);
-
-        // Pagination
         var patients = await query
             .OrderByDescending(x => x.CreatedAt)
             .Skip((request.PageNumber - 1) * request.PageSize)
@@ -257,23 +228,15 @@ public class PatientService(
             {
                 Id = x.Id,
                 ApplicationUserId = x.ApplicationUserId,
-
                 FullName = x.ApplicationUser.FullName,
                 Email = x.ApplicationUser.Email!,
                 PhoneNumber = x.ApplicationUser.PhoneNumber!,
-
                 Gender = x.ApplicationUser.Gender,
-                BrithDay = x.ApplicationUser.BirthDate,
-
+                BirthDate = x.ApplicationUser.BirthDate,
                 PaymentType = x.PaymentType,
                 EmergencyContact = x.EmergencyContact,
-
                 InsuranceCompanyId = x.InsuranceCompanyId,
-                InsuranceCompanyName =
-                    x.InsuranceCompany != null
-                        ? x.InsuranceCompany.Name
-                        : null,
-
+                InsuranceCompanyName = x.InsuranceCompany != null ? x.InsuranceCompany.Name : null,
                 CreatedAt = x.CreatedAt
             })
             .ToListAsync();
@@ -305,20 +268,15 @@ public class PatientService(
         {
             Id = patient.Id,
             ApplicationUserId = patient.ApplicationUserId,
-
             FullName = patient.ApplicationUser.FullName,
             Email = patient.ApplicationUser.Email!,
             PhoneNumber = patient.ApplicationUser.PhoneNumber!,
-
             Gender = patient.ApplicationUser.Gender,
-            BrithDay = patient.ApplicationUser.BirthDate,
-
+            BirthDate = patient.ApplicationUser.BirthDate,
             PaymentType = patient.PaymentType,
             EmergencyContact = patient.EmergencyContact,
-
             InsuranceCompanyId = patient.InsuranceCompanyId,
             InsuranceCompanyName = patient.InsuranceCompany?.Name,
-
             CreatedAt = patient.CreatedAt
         };
 
@@ -392,6 +350,7 @@ public class PatientService(
             throw;
         }
     }
+
     public async Task<Result> DeleteAsync(int id)
     {
         var patient = await _context.Patients
@@ -442,12 +401,12 @@ public class PatientService(
         var random = new Random();
 
         var password = new List<char>
-            {
-                upper[random.Next(upper.Length)],
-                lower[random.Next(lower.Length)],
-                digits[random.Next(digits.Length)],
-                special[random.Next(special.Length)]
-            };
+        {
+            upper[random.Next(upper.Length)],
+            lower[random.Next(lower.Length)],
+            digits[random.Next(digits.Length)],
+            special[random.Next(special.Length)]
+        };
 
         string allChars = upper + lower + digits + special;
         for (int i = password.Count; i < length; i++)

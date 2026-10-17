@@ -96,8 +96,7 @@ public class InsuranceCompanyService(ApplicationDbContext context) : IInsuranceC
         company.Name = request.Name;
         company.PortalUrl = request.PortalUrl;
         company.IsActive = request.IsActive;
-
-
+        company.Hotline = request.Hotline;
         await _context.SaveChangesAsync();
 
 

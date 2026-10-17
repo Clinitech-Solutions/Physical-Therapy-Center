@@ -1,17 +1,38 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using PTCenter.Domain.Entities;
 
-namespace PTCenter.Infrastructure.Persistence.Configurations
+namespace PTCenter.Infrastructure.Persistence.Configurations;
+
+public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 {
-    public class PaymentConfiguration : IEntityTypeConfiguration<Payment> 
+    public void Configure(EntityTypeBuilder<Payment> b)
     {
-        public void Configure(EntityTypeBuilder<Payment> b) 
-        {
-            b.HasKey(x => x.Id);
-            b.HasQueryFilter(x => !x.IsDeleted);
-        } 
+        b.HasKey(x => x.Id);
+
+        b.Property(x => x.Amount)
+            .HasPrecision(18, 2)
+            .IsRequired();
+
+        b.Property(x => x.PaymentMethod)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+
+        b.Property(x => x.Status)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+
+        b.Property(x => x.TransactionId)
+            .HasMaxLength(150);
+
+        b.HasOne(x => x.Invoice)
+            .WithMany(x => x.Payments)
+            .HasForeignKey(x => x.InvoiceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.HasQueryFilter(x => !x.IsDeleted);
     }
 }
