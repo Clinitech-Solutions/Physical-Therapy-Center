@@ -126,13 +126,6 @@ namespace PTCenter.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = "0191d311-2918-7f76-bd8a-0bdf740adff8",
-                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11384",
-                            Name = "Owner",
-                            NormalizedName = "OWNER"
-                        },
-                        new
-                        {
                             Id = "0191d311-2918-7f76-bd8a-0bdf740adff9",
                             ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11385",
                             Name = "Doctor",
@@ -147,10 +140,10 @@ namespace PTCenter.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = "0191d311-2918-7f76-bd8a-0bdf740adffa",
-                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11386",
-                            Name = "Senior",
-                            NormalizedName = "SENIOR"
+                            Id = "0191d311-2918-7f76-bd8a-0bdf740adff8",
+                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11384",
+                            Name = "Owner",
+                            NormalizedName = "OWNER"
                         },
                         new
                         {
@@ -158,6 +151,13 @@ namespace PTCenter.Infrastructure.Migrations
                             ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11387",
                             Name = "Receptionist",
                             NormalizedName = "RECEPTIONIST"
+                        },
+                        new
+                        {
+                            Id = "0191d311-2918-7f76-bd8a-0bdf740adffa",
+                            ConcurrencyStamp = "0191d311-2918-7f76-bd8a-0be100f11386",
+                            Name = "Senior",
+                            NormalizedName = "SENIOR"
                         },
                         new
                         {
@@ -400,7 +400,7 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DoctorId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<DateTime>("EndTime")
                         .HasColumnType("datetime2");
@@ -433,6 +433,14 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DoctorId");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("RoomId");
+
+                    b.HasIndex("TreatmentPlanSessionId");
 
                     b.ToTable("Appointments");
                 });
@@ -581,6 +589,9 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("DeletedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Hotline")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsActive")
@@ -794,6 +805,9 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("InsuranceCompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("InsuranceStatus")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
@@ -1203,6 +1217,35 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PTCenter.Domain.Entities.Appointment", b =>
+                {
+                    b.HasOne("PTCenter.Domain.Entities.ApplicationUser", "Doctor")
+                        .WithMany()
+                        .HasForeignKey("DoctorId");
+
+                    b.HasOne("PTCenter.Domain.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PTCenter.Domain.Entities.Room", "Room")
+                        .WithMany()
+                        .HasForeignKey("RoomId");
+
+                    b.HasOne("PTCenter.Domain.Entities.TreatmentPlanSession", "TreatmentPlanSession")
+                        .WithMany()
+                        .HasForeignKey("TreatmentPlanSessionId");
+
+                    b.Navigation("Doctor");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Room");
+
+                    b.Navigation("TreatmentPlanSession");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.DoctorSchedule", b =>

@@ -24,7 +24,7 @@ namespace PTCenter.Domain.Entities.Enums
     }
     public enum AppointmentStatus
     {
-        Scheduled,
+        Pending,
         Completed,
         Cancelled,
         NoShow

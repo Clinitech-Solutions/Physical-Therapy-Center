@@ -38,7 +38,8 @@ public static class InfrastructureExtensions
             services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();
             services.AddScoped<ITreatmentPlanSessionService, TreatmentPlanSessionService>();
             services.AddScoped<IAssessmentService, AssessmentService>();
-
+            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IReceptionistService, ReceptionistService>();
 
             return services;
         }

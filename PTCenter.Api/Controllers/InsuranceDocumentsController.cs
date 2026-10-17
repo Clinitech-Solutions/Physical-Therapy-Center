@@ -1,104 +1,40 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using PTCenter.Api.Extensions;
+﻿using Microsoft.AspNetCore.Mvc;
 using PTCenter.Application.Contracts.InsuranceDocument;
 using PTCenter.Application.Interfaces;
 
 namespace PTCenter.Api.Controllers;
 
-
+[Route("api/[controller]")]
 [ApiController]
-[Route("api/[controller]/[action]")]
-[Authorize(Roles = DefaultRoles.Admin.Name + "," + DefaultRoles.Owner.Name)]
-public class InsuranceDocumentsController(
-    IInsuranceDocumentService insuranceDocumentService)
-    : ControllerBase
+public class InsuranceDocumentsController(IInsuranceDocumentService documentService) : ControllerBase
 {
-    private readonly IInsuranceDocumentService _insuranceDocumentService =
-        insuranceDocumentService;
+    private readonly IInsuranceDocumentService _documentService = documentService;
 
-
-
-    [HttpPost]
-    [Consumes("multipart/form-data")]
-    [ProducesResponseType(typeof(InsuranceDocumentResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Add(
-        [FromForm] CreateInsuranceDocumentRequest request)
+    [HttpPost("Add")]
+    public async Task<IActionResult> Add([FromForm] CreateInsuranceDocumentRequest request)
     {
-        var result = await _insuranceDocumentService.AddAsync(request);
-
-
-        return result.IsSuccess
-            ? Ok(result.Value)
-            : result.ToProblem();
+        var result = await _documentService.AddRangeAsync(request);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
     }
-
-
 
     [HttpGet]
-    [ProducesResponseType(typeof(List<InsuranceDocumentResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()
     {
-        var result = await _insuranceDocumentService.GetAllAsync();
-
-
-        return result.IsSuccess
-            ? Ok(result.Value)
-            : result.ToProblem();
+        var result = await _documentService.GetAllAsync();
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
     }
 
-
-
-
-    [HttpGet("{id:int}")]
-    [ProducesResponseType(typeof(InsuranceDocumentResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetById(int id)
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromForm] UpdateInsuranceDocumentRequest request)
     {
-        var result = await _insuranceDocumentService.GetByIdAsync(id);
-
-
-        return result.IsSuccess
-            ? Ok(result.Value)
-            : result.ToProblem();
+        var result = await _documentService.UpdateAsync(id, request);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
     }
 
-
-
-
-    [HttpPut("{id:int}")]
-    [Consumes("multipart/form-data")]
-    [ProducesResponseType(typeof(InsuranceDocumentResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Update(
-        int id,
-        [FromForm] UpdateInsuranceDocumentRequest request)
-    {
-        var result =
-            await _insuranceDocumentService.UpdateAsync(id, request);
-
-
-        return result.IsSuccess
-            ? Ok(result.Value)
-            : result.ToProblem();
-    }
-
-
-
-
-
-    [HttpDelete("{id:int}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var result =
-            await _insuranceDocumentService.DeleteAsync(id);
-
-
-        return result.IsSuccess
-            ? Ok()
-            : result.ToProblem();
+        var result = await _documentService.DeleteAsync(id);
+        return result.IsSuccess ? Ok() : BadRequest(result.Error);
     }
 }

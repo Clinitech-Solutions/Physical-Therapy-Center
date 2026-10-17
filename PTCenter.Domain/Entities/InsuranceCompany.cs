@@ -7,6 +7,7 @@ public class InsuranceCompany : BaseEntity
     
     public string? PortalUrl { get; set; }
     public bool IsActive { get; set; } = true;
+    public string? Hotline { get; set; } // أضف هذا الحقل
 
     public ICollection<Patient> Patients { get; set; } = new List<Patient>();
 }
