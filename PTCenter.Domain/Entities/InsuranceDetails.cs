@@ -1,4 +1,5 @@
-﻿using System;
+﻿using PTCenter.Domain.Entities;
+using System;
 using System.Collections.Generic;
 using System.Text;
 

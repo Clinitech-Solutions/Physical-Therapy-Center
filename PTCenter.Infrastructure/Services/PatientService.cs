@@ -80,7 +80,6 @@ public class PatientService(
             };
 
             var password = GeneratePassword();
-
             var createResult = await _userManager.CreateAsync(user, password);
 
             if (!createResult.Succeeded)
@@ -176,7 +175,6 @@ public class PatientService(
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var search = request.Search.Trim();
-
             query = query.Where(x =>
                 x.ApplicationUser.FullName.Contains(search) ||
                 (x.ApplicationUser.PhoneNumber != null &&
@@ -220,9 +218,7 @@ public class PatientService(
             PageSize = request.PageSize,
             TotalCount = totalCount,
             TotalPages = totalPages
-        };
-
-        return Result.Success(response);
+        });
     }
 
     // ========================= GET PATIENT BY ID =========================
@@ -350,7 +346,6 @@ public class PatientService(
             user.Gender = request.Gender;
 
             var identityResult = await _userManager.UpdateAsync(user);
-
             if (!identityResult.Succeeded)
             {
                 LogIdentityErrors(
@@ -428,7 +423,6 @@ public class PatientService(
             }
 
             await transaction.CommitAsync();
-
             return Result.Success();
         }
         catch (Exception ex)
