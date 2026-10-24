@@ -1,33 +1,37 @@
-﻿using PTCenter.Domain.Entities.Enums;
-using System;
-using System.Collections.Generic;
+﻿
 using System.ComponentModel.DataAnnotations;
-using System.Text;
+using PTCenter.Domain.Entities.Enums;
 
-namespace PTCenter.Application.Contracts.Patients
+namespace PTCenter.Application.Contracts.Patients;
+
+public class CreatePatientRequest
 {
-    public class CreatePatientRequest
-    {
-        [Required]
-        public string UserName { get; set; } = null!;
-        [Required]
-        public string Email { get; set; } = null!;
-        [Required]
-        public string FullName { get; set; } = null!;
-        [Required]
-        public Gender Gender { get; set; } = Gender.Male;
-        [Required]
+    [Required]
+    [StringLength(50, MinimumLength = 3)]
+    public string UserName { get; set; } = string.Empty;
 
-        public DateTime BirthDate { get; set; }
-        [Required]
-        public string PhoneNumber { get; set; } = null!;
+    [Required]
+    [StringLength(150, MinimumLength = 2)]
+    public string FullName { get; set; } = string.Empty;
 
-        [MaxLength(20)]
-        public string? PaymentType { get; set; }
+    [Required]
+    public Gender Gender { get; set; } = Gender.Male;
 
-        [MaxLength(20)]
-        public string? EmergencyContact { get; set; }
-        public InsuranceDetailsDto? InsuranceDetails { get; set; }
-        public int? InsuranceCompanyId { get; set; }
-    }
+    [Required]
+    public DateTime BirthDate { get; set; }
+
+    [Required]
+    [Phone]
+    [StringLength(20)]
+    public string PhoneNumber { get; set; } = string.Empty;
+
+    [StringLength(20)]
+    public string? PaymentType { get; set; }
+
+    [StringLength(20)]
+    public string? EmergencyContact { get; set; }
+
+    public InsuranceDetailsResponse? InsuranceDetails { get; set; }
+
+    public int? InsuranceCompanyId { get; set; }
 }

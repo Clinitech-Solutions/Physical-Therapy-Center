@@ -42,7 +42,7 @@ public static class InfrastructureExtensions
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IReceptionistService, ReceptionistService>();
             services.AddScoped<IBillingService, BillingService>();
-
+            services.AddScoped<IRoomService, RoomService>();
             return services;
         }
 

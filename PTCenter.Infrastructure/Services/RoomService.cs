@@ -1,0 +1,194 @@
+﻿using Microsoft.EntityFrameworkCore;
+using PTCenter.Application.Abstractions;
+using PTCenter.Application.Contracts.Rooms;
+using PTCenter.Application.Interfaces;
+using PTCenter.Domain.Entities;
+using PTCenter.Domain.Entities.Enums;
+using PTCenter.Domain.Errors;
+using PTCenter.Infrastructure.Persistence;
+
+namespace PTCenter.Infrastructure.Services;
+
+public class RoomService(ApplicationDbContext context) : IRoomService
+{
+    private readonly ApplicationDbContext _context = context;
+
+    public async Task<Result<List<RoomResponse>>> GetAllAsync()
+    {
+        var rooms = await _context.Rooms
+            .AsNoTracking()
+            .OrderBy(x => x.Id)
+            .ToListAsync();
+
+        var responses = new List<RoomResponse>();
+
+        foreach (var room in rooms)
+            responses.Add(await MapRoomAsync(room));
+
+        return Result.Success(responses);
+    }
+
+    public async Task<Result<RoomResponse>> GetByIdAsync(int id)
+    {
+        var room = await _context.Rooms
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (room is null)
+            return Result.Failure<RoomResponse>(RoomErrors.RoomNotFound);
+
+        return Result.Success(await MapRoomAsync(room));
+    }
+
+    public async Task<Result<RoomResponse>> CreateAsync(CreateRoomRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return Result.Failure<RoomResponse>(RoomErrors.InvalidName);
+
+        if (request.Capacity <= 0)
+            return Result.Failure<RoomResponse>(RoomErrors.InvalidCapacity);
+
+        var room = new Room
+        {
+            Name = request.Name.Trim(),
+            Capacity = request.Capacity,
+            IsActive = request.IsActive
+        };
+
+        await _context.Rooms.AddAsync(room);
+        await _context.SaveChangesAsync();
+
+        return Result.Success(await MapRoomAsync(room));
+    }
+
+    public async Task<Result<RoomResponse>> UpdateAsync(
+        int id,
+        UpdateRoomRequest request)
+    {
+        var room = await _context.Rooms
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (room is null)
+            return Result.Failure<RoomResponse>(RoomErrors.RoomNotFound);
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return Result.Failure<RoomResponse>(RoomErrors.InvalidName);
+
+        if (request.Capacity <= 0)
+            return Result.Failure<RoomResponse>(RoomErrors.InvalidCapacity);
+
+        if (!request.IsActive && room.IsActive)
+        {
+            var hasFutureAppointments = await _context.Appointments.AnyAsync(x =>
+                x.RoomId == id &&
+                x.StartTime > DateTime.UtcNow &&
+                x.Status != AppointmentStatus.Cancelled &&
+                x.Status != AppointmentStatus.Completed &&
+                x.Status != AppointmentStatus.NoShow);
+
+            if (hasFutureAppointments)
+                return Result.Failure<RoomResponse>(
+                    RoomErrors.RoomHasFutureAppointments);
+        }
+
+        room.Name = request.Name.Trim();
+        room.Capacity = request.Capacity;
+        room.IsActive = request.IsActive;
+
+        await _context.SaveChangesAsync();
+
+        return Result.Success(await MapRoomAsync(room));
+    }
+
+    public async Task<Result> UpdateMaintenanceAsync(
+        int id,
+        bool maintenance)
+    {
+        var room = await _context.Rooms
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (room is null)
+            return Result.Failure(RoomErrors.RoomNotFound);
+
+        if (maintenance)
+        {
+            var hasFutureAppointments = await _context.Appointments.AnyAsync(x =>
+                x.RoomId == id &&
+                x.StartTime > DateTime.UtcNow &&
+                x.Status != AppointmentStatus.Cancelled &&
+                x.Status != AppointmentStatus.Completed &&
+                x.Status != AppointmentStatus.NoShow);
+
+            if (hasFutureAppointments)
+                return Result.Failure(RoomErrors.RoomHasFutureAppointments);
+        }
+
+        room.IsActive = !maintenance;
+
+        await _context.SaveChangesAsync();
+
+        return Result.Success();
+    }
+
+    public async Task<Result> DeleteAsync(int id)
+    {
+        var room = await _context.Rooms
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (room is null)
+            return Result.Failure(RoomErrors.RoomNotFound);
+
+        var hasAppointments = await _context.Appointments
+            .AnyAsync(x => x.RoomId == id);
+
+        if (hasAppointments)
+            return Result.Failure(RoomErrors.RoomHasAppointments);
+
+        _context.Rooms.Remove(room);
+        await _context.SaveChangesAsync();
+
+        return Result.Success();
+    }
+
+    private async Task<RoomResponse> MapRoomAsync(Room room)
+    {
+        var now = DateTime.UtcNow;
+
+        var currentAppointments = await _context.Appointments
+            .AsNoTracking()
+            .Where(x =>
+                x.RoomId == room.Id &&
+                x.StartTime <= now &&
+                x.EndTime > now &&
+                x.Status != AppointmentStatus.Cancelled &&
+                x.Status != AppointmentStatus.Completed &&
+                x.Status != AppointmentStatus.NoShow)
+            .Select(x => new
+            {
+                x.DoctorId,
+                DoctorName = x.Doctor != null ? x.Doctor.FullName : null
+            })
+            .ToListAsync();
+
+        var currentLoad = currentAppointments.Count;
+
+        var status = !room.IsActive
+            ? StatusRoom.Maintenance
+            : currentLoad > 0
+                ? StatusRoom.Occupied
+                : StatusRoom.Available;
+
+        var doctor = currentAppointments.FirstOrDefault();
+
+        return new RoomResponse
+        {
+            Id = room.Id,
+            Name = room.Name,
+            Capacity = room.Capacity,
+            IsActive = room.IsActive,
+            Status = status,
+            CurrentLoad = currentLoad,
+            DoctorId = doctor?.DoctorId,
+            DoctorName = doctor?.DoctorName
+        };
+    }
+}

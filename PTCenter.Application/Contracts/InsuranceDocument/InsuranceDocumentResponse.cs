@@ -8,8 +8,6 @@ public class InsuranceDocumentResponse
 
     public string PatientName { get; set; } = null!;
 
-    public decimal CoveragePercent { get; set; }
-
     public string FileName { get; set; } = null!;
 
     public string FilePath { get; set; } = null!;

@@ -1,8 +1,9 @@
-﻿using Mapster;
-using Microsoft.AspNetCore.Http;
+﻿
+using System.Security.Cryptography;
+using Mapster;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using PTCenter.Application.Abstractions;
+using Microsoft.Extensions.Logging;
 using PTCenter.Application.Contracts.Common;
 using PTCenter.Application.Contracts.Patients;
 using PTCenter.Application.Interfaces;
@@ -15,31 +16,52 @@ namespace PTCenter.Infrastructure.Services;
 public class PatientService(
     ApplicationDbContext context,
     UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender)
+    ILogger<PatientService> logger)
     : IPatientService
 {
     private readonly ApplicationDbContext _context = context;
     private readonly UserManager<ApplicationUser> _userManager = userManager;
-    private readonly IEmailSender _emailSender = emailSender;
+    private readonly ILogger<PatientService> _logger = logger;
 
-    public async Task<Result<PatientResponse>> AddAsync(CreatePatientRequest request)
+    // ========================= ADD PATIENT =========================
+
+    public async Task<Result<PatientResponse>> AddAsync(
+        CreatePatientRequest request)
     {
-        if ((await _userManager.FindByNameAsync(request.UserName) ??
-             await _userManager.FindByEmailAsync(request.Email)) is not null)
-        {
-            return Result.Failure<PatientResponse>(PatientErrors.PatientAlreadyExists);
-        }
+        if (string.IsNullOrWhiteSpace(request.UserName))
+            return Result.Failure<PatientResponse>(
+                PatientErrors.RegistrationFailed);
+
+        var userName = request.UserName.Trim();
+
+        var existingUser = await _userManager.FindByNameAsync(userName);
+
+        if (existingUser is not null)
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientAlreadyExists);
 
         if (request.InsuranceCompanyId.HasValue)
         {
             var companyExists = await _context.InsuranceCompanies
-                .AnyAsync(x => x.Id == request.InsuranceCompanyId);
+                .AnyAsync(x => x.Id == request.InsuranceCompanyId.Value);
 
             if (!companyExists)
-                return Result.Failure<PatientResponse>(PatientErrors.InsuranceCompanyNotFound);
+                return Result.Failure<PatientResponse>(
+                    PatientErrors.InsuranceCompanyNotFound);
         }
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        // CreatePatientRequest does not contain an email in this version,
+        // so the service generates a placeholder email.
+        var generatedEmail = $"{userName}@example.com";
+
+        var existingEmail = await _userManager.FindByEmailAsync(generatedEmail);
+
+        if (existingEmail is not null)
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientAlreadyExists);
+
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync();
 
         ApplicationUser? user = null;
 
@@ -47,12 +69,13 @@ public class PatientService(
         {
             user = new ApplicationUser
             {
-                UserName = request.UserName,
-                Email = request.Email,
-                PhoneNumber = request.PhoneNumber,
-                FullName = request.FullName,
+                UserName = userName,
+                Email = generatedEmail,
+                PhoneNumber = request.PhoneNumber?.Trim(),
+                FullName = request.FullName.Trim(),
                 Gender = request.Gender,
                 BirthDate = request.BirthDate,
+
                 EmailConfirmed = true
             };
 
@@ -62,139 +85,91 @@ public class PatientService(
 
             if (!createResult.Succeeded)
             {
+                LogIdentityErrors(
+                    "Create patient user",
+                    userName,
+                    createResult.Errors);
+
                 await transaction.RollbackAsync();
-                return Result.Failure<PatientResponse>(PatientErrors.RegistrationFailed);
+
+                return Result.Failure<PatientResponse>(
+                    PatientErrors.RegistrationFailed);
             }
 
-            var roleResult = await _userManager.AddToRoleAsync(user, "Patient");
+            // Assign the Patient role.
+            // The Patient role must already exist in the database.
+            var roleResult = await _userManager.AddToRoleAsync(
+                user,
+                "Patient");
 
             if (!roleResult.Succeeded)
             {
-                await _userManager.DeleteAsync(user);
+                LogIdentityErrors(
+                    "Assign Patient role",
+                    userName,
+                    roleResult.Errors);
+
                 await transaction.RollbackAsync();
 
-                return Result.Failure<PatientResponse>(PatientErrors.FailedToAssignRole);
+                return Result.Failure<PatientResponse>(
+                    PatientErrors.FailedToAssignRole);
             }
 
             var patient = request.Adapt<Patient>();
+
             patient.ApplicationUserId = user.Id;
+
+            // Uses InsuranceDetailsResponse as requested.
+            if (request.InsuranceDetails is not null)
+            {
+                patient.InsuranceDetails =
+                    request.InsuranceDetails.Adapt<InsuranceDetails>();
+            }
 
             await _context.Patients.AddAsync(patient);
             await _context.SaveChangesAsync();
 
             await transaction.CommitAsync();
 
-            var response = patient.Adapt<PatientResponse>();
+            var response = await GetPatientResponseAsync(patient.Id);
 
-            response.FullName = user.FullName;
-            response.Email = user.Email!;
-            response.PhoneNumber = user.PhoneNumber!;
-            response.BirthDate = user.BirthDate;
+            if (response is null)
+            {
+                _logger.LogError(
+                    "Patient {PatientId} was created but could not be loaded.",
+                    patient.Id);
 
-            if (patient.InsuranceCompanyId.HasValue)
-            {
-                response.InsuranceCompanyName = await _context.InsuranceCompanies
-                    .Where(x => x.Id == patient.InsuranceCompanyId)
-                    .Select(x => x.Name)
-                    .FirstOrDefaultAsync();
-            }
-
-            try
-            {
-                await _emailSender.SendEmailAsync(
-                    user.Email!,
-                    "Mediqova - Account Password",
-                    $"""
-                    <!DOCTYPE html>
-                    <html lang="en">
-                    <head>
-                        <meta charset="UTF-8">
-                        <title>Mediqova</title>
-                    </head>
-                    <body style="margin:0;padding:0;background:#f4f7fb;font-family:'Segoe UI',Arial,sans-serif;">
-                        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:40px 0;">
-                            <tr>
-                                <td align="center">
-                                    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-                                        <tr>
-                                            <td style="background:linear-gradient(135deg,#0F4C81,#1E88E5);padding:40px;text-align:center;">
-                                                <div style="width:72px;height:72px;margin:auto;background:#fff;border-radius:50%;line-height:72px;font-size:34px;">
-                                                    🏥
-                                                </div>
-                                                <h1 style="margin:20px 0 8px;color:white;">
-                                                    Mediqova
-                                                </h1>
-                                                <p style="margin:0;color:#dbeafe;">
-                                                    Powered by Clinitech Solutions
-                                                </p>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding:45px;">
-                                                <h2>Welcome to Mediqova 👋</h2>
-                                                <p style="font-size:16px;color:#4b5563;">
-                                                    Your account has been created successfully.
-                                                </p>
-                                                <p style="font-size:16px;color:#4b5563;">
-                                                    Your temporary password is:
-                                                </p>
-                                                <div style="margin:30px auto;width:280px;background:#eff6ff;border:2px dashed #1E88E5;border-radius:12px;padding:20px;text-align:center;">
-                                                    <div style="font-size:34px;font-weight:bold;letter-spacing:5px;color:#0F4C81;">
-                                                        {password}
-                                                    </div>
-                                                </div>
-                                                <p style="color:#dc2626;font-weight:bold;text-align:center;">
-                                                    Please change your password after your first login.
-                                                </p>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td style="background:#f9fafb;padding:25px;text-align:center;">
-                                                <strong>Clinitech Solutions</strong>
-                                                <br />
-                                                <small>© 2026 Mediqova. All rights reserved.</small>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                        </table>
-                    </body>
-                    </html>
-                    """);
-            }
-            catch
-            {
-                // Log email error if needed
+                return Result.Failure<PatientResponse>(
+                    PatientErrors.RegistrationFailed);
             }
 
             return Result.Success(response);
         }
-        catch
+        catch (Exception ex)
         {
             await transaction.RollbackAsync();
 
-            if (user != null)
-                await _userManager.DeleteAsync(user);
+            _logger.LogError(
+                ex,
+                "Unexpected error while registering patient {UserName}.",
+                userName);
 
             throw;
         }
     }
 
-    public async Task<Result<PagedResponse<PatientResponse>>> GetAllAsync(PatientQueryRequest request)
+    // ========================= GET ALL PATIENTS =========================
+
+    public async Task<Result<PagedResponse<PatientResponse>>> GetAllAsync(
+        PatientQueryRequest request)
     {
-        if (request.PageNumber < 1)
-            request.PageNumber = 1;
-
-        if (request.PageSize < 1)
-            request.PageSize = 10;
-
-        if (request.PageSize > 100)
-            request.PageSize = 100;
+        request.PageNumber = Math.Max(1, request.PageNumber);
+        request.PageSize = Math.Clamp(request.PageSize, 1, 100);
 
         var query = _context.Patients
             .Include(x => x.ApplicationUser)
             .Include(x => x.InsuranceCompany)
+            .Include(x => x.InsuranceDetails)
             .AsNoTracking()
             .AsQueryable();
 
@@ -204,46 +179,43 @@ public class PatientService(
 
             query = query.Where(x =>
                 x.ApplicationUser.FullName.Contains(search) ||
-                x.ApplicationUser.PhoneNumber!.Contains(search));
+                (x.ApplicationUser.PhoneNumber != null &&
+                 x.ApplicationUser.PhoneNumber.Contains(search)) ||
+                (x.ApplicationUser.UserName != null &&
+                 x.ApplicationUser.UserName.Contains(search)));
         }
 
         if (!string.IsNullOrWhiteSpace(request.PaymentType))
         {
-            query = query.Where(x => x.PaymentType == request.PaymentType);
+            query = query.Where(
+                x => x.PaymentType == request.PaymentType);
         }
 
         if (request.InsuranceCompanyId.HasValue)
         {
-            query = query.Where(x => x.InsuranceCompanyId == request.InsuranceCompanyId.Value);
+            query = query.Where(
+                x => x.InsuranceCompanyId ==
+                     request.InsuranceCompanyId.Value);
         }
 
         var totalCount = await query.CountAsync();
-        var totalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize);
+
+        var totalPages = (int)Math.Ceiling(
+            totalCount / (double)request.PageSize);
 
         var patients = await query
             .OrderByDescending(x => x.CreatedAt)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(x => new PatientResponse
-            {
-                Id = x.Id,
-                ApplicationUserId = x.ApplicationUserId,
-                FullName = x.ApplicationUser.FullName,
-                Email = x.ApplicationUser.Email!,
-                PhoneNumber = x.ApplicationUser.PhoneNumber!,
-                Gender = x.ApplicationUser.Gender,
-                BirthDate = x.ApplicationUser.BirthDate,
-                PaymentType = x.PaymentType,
-                EmergencyContact = x.EmergencyContact,
-                InsuranceCompanyId = x.InsuranceCompanyId,
-                InsuranceCompanyName = x.InsuranceCompany != null ? x.InsuranceCompany.Name : null,
-                CreatedAt = x.CreatedAt
-            })
             .ToListAsync();
+
+        var items = patients
+            .Select(patient => MapToResponse(patient))
+            .ToList();
 
         var response = new PagedResponse<PatientResponse>
         {
-            Items = patients,
+            Items = items,
             PageNumber = request.PageNumber,
             PageSize = request.PageSize,
             TotalCount = totalCount,
@@ -253,80 +225,127 @@ public class PatientService(
         return Result.Success(response);
     }
 
+    // ========================= GET PATIENT BY ID =========================
+
     public async Task<Result<PatientResponse>> GetByIdAsync(int id)
     {
         var patient = await _context.Patients
             .Include(x => x.ApplicationUser)
             .Include(x => x.InsuranceCompany)
+            .Include(x => x.InsuranceDetails)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (patient is null)
-            return Result.Failure<PatientResponse>(PatientErrors.PatientNotFound);
-
-        var response = new PatientResponse
         {
-            Id = patient.Id,
-            ApplicationUserId = patient.ApplicationUserId,
-            FullName = patient.ApplicationUser.FullName,
-            Email = patient.ApplicationUser.Email!,
-            PhoneNumber = patient.ApplicationUser.PhoneNumber!,
-            Gender = patient.ApplicationUser.Gender,
-            BirthDate = patient.ApplicationUser.BirthDate,
-            PaymentType = patient.PaymentType,
-            EmergencyContact = patient.EmergencyContact,
-            InsuranceCompanyId = patient.InsuranceCompanyId,
-            InsuranceCompanyName = patient.InsuranceCompany?.Name,
-            CreatedAt = patient.CreatedAt
-        };
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientNotFound);
+        }
 
-        return Result.Success(response);
+        return Result.Success(MapToResponse(patient));
     }
 
-    public async Task<Result<PatientResponse>> UpdateAsync(int id, UpdatePatientRequest request)
+    // ========================= UPDATE PATIENT =========================
+
+    public async Task<Result<PatientResponse>> UpdateAsync(
+        int id,
+        UpdatePatientRequest request)
     {
         var patient = await _context.Patients
+            .Include(x => x.InsuranceDetails)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (patient is null)
-            return Result.Failure<PatientResponse>(PatientErrors.PatientNotFound);
+        {
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientNotFound);
+        }
 
         if (request.InsuranceCompanyId.HasValue)
         {
             var companyExists = await _context.InsuranceCompanies
-                .AnyAsync(x => x.Id == request.InsuranceCompanyId);
+                .AnyAsync(
+                    x => x.Id == request.InsuranceCompanyId.Value);
 
             if (!companyExists)
-                return Result.Failure<PatientResponse>(PatientErrors.InsuranceCompanyNotFound);
+            {
+                return Result.Failure<PatientResponse>(
+                    PatientErrors.InsuranceCompanyNotFound);
+            }
         }
 
-        var user = await _userManager.FindByIdAsync(patient.ApplicationUserId);
+        var user = await _userManager.FindByIdAsync(
+            patient.ApplicationUserId);
 
         if (user is null)
-            return Result.Failure<PatientResponse>(PatientErrors.PatientNotFound);
+        {
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientNotFound);
+        }
 
-        var userNameExists = await _userManager.FindByNameAsync(request.UserName);
+        var userName = request.UserName.Trim();
+        var email = request.Email.Trim();
 
-        if (userNameExists is not null && userNameExists.Id != user.Id)
-            return Result.Failure<PatientResponse>(PatientErrors.PatientAlreadyExists);
+        var existingUserName =
+            await _userManager.FindByNameAsync(userName);
 
-        var emailExists = await _userManager.FindByEmailAsync(request.Email);
+        if (existingUserName is not null &&
+            existingUserName.Id != user.Id)
+        {
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientAlreadyExists);
+        }
 
-        if (emailExists is not null && emailExists.Id != user.Id)
-            return Result.Failure<PatientResponse>(PatientErrors.PatientAlreadyExists);
+        var existingEmail =
+            await _userManager.FindByEmailAsync(email);
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        if (existingEmail is not null &&
+            existingEmail.Id != user.Id)
+        {
+            return Result.Failure<PatientResponse>(
+                PatientErrors.PatientAlreadyExists);
+        }
+
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync();
 
         try
         {
+            // Update patient-specific fields.
             patient.PaymentType = request.PaymentType;
             patient.EmergencyContact = request.EmergencyContact;
             patient.InsuranceCompanyId = request.InsuranceCompanyId;
 
-            user.UserName = request.UserName;
-            user.Email = request.Email;
-            user.PhoneNumber = request.PhoneNumber;
-            user.FullName = request.FullName;
+            // Uses InsuranceDetailsResponse as requested.
+            if (request.InsuranceDetails is not null)
+            {
+                patient.InsuranceDetails ??= new InsuranceDetails();
+
+                patient.InsuranceDetails.Status =
+                    request.InsuranceDetails.Status;
+
+                patient.InsuranceDetails.CopayPercentage =
+                    request.InsuranceDetails.CopayPercentage;
+
+                patient.InsuranceDetails.ApprovedSessions =
+                    request.InsuranceDetails.ApprovedSessions;
+
+                patient.InsuranceDetails.MemberId =
+                    request.InsuranceDetails.MemberId;
+
+                patient.InsuranceDetails.Employer =
+                    request.InsuranceDetails.Employer;
+            }
+            else
+            {
+                patient.InsuranceDetails = null;
+            }
+
+            // Update the linked Identity user.
+            user.UserName = userName;
+            user.Email = email;
+            user.PhoneNumber = request.PhoneNumber?.Trim();
+            user.FullName = request.FullName.Trim();
             user.BirthDate = request.BirthDate;
             user.Gender = request.Gender;
 
@@ -334,22 +353,38 @@ public class PatientService(
 
             if (!identityResult.Succeeded)
             {
+                LogIdentityErrors(
+                    "Update patient user",
+                    userName,
+                    identityResult.Errors);
+
                 await transaction.RollbackAsync();
-                return Result.Failure<PatientResponse>(PatientErrors.RegistrationFailed);
+
+                return Result.Failure<PatientResponse>(
+                    PatientErrors.RegistrationFailed);
             }
 
             await _context.SaveChangesAsync();
-
             await transaction.CommitAsync();
 
-            return await GetByIdAsync(id);
+            var updatedPatient = await GetByIdAsync(id);
+
+            return updatedPatient;
         }
-        catch
+        catch (Exception ex)
         {
             await transaction.RollbackAsync();
+
+            _logger.LogError(
+                ex,
+                "Unexpected error while updating patient {PatientId}.",
+                id);
+
             throw;
         }
     }
+
+    // ========================= DELETE PATIENT =========================
 
     public async Task<Result> DeleteAsync(int id)
     {
@@ -357,26 +392,38 @@ public class PatientService(
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (patient is null)
-            return Result.Failure(PatientErrors.PatientNotFound);
+        {
+            return Result.Failure(
+                PatientErrors.PatientNotFound);
+        }
 
-        var user = await _userManager.FindByIdAsync(patient.ApplicationUserId);
+        var user = await _userManager.FindByIdAsync(
+            patient.ApplicationUserId);
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync();
 
         try
         {
             _context.Patients.Remove(patient);
-
             await _context.SaveChangesAsync();
 
             if (user is not null)
             {
-                var identityResult = await _userManager.DeleteAsync(user);
+                var identityResult =
+                    await _userManager.DeleteAsync(user);
 
                 if (!identityResult.Succeeded)
                 {
+                    LogIdentityErrors(
+                        "Delete patient user",
+                        user.UserName ?? user.Id,
+                        identityResult.Errors);
+
                     await transaction.RollbackAsync();
-                    return Result.Failure(PatientErrors.DeleteFailed);
+
+                    return Result.Failure(
+                        PatientErrors.DeleteFailed);
                 }
             }
 
@@ -384,36 +431,118 @@ public class PatientService(
 
             return Result.Success();
         }
-        catch
+        catch (Exception ex)
         {
             await transaction.RollbackAsync();
+
+            _logger.LogError(
+                ex,
+                "Unexpected error while deleting patient {PatientId}.",
+                id);
+
             throw;
         }
     }
 
-    private string GeneratePassword(int length = 10)
+    // ========================= MAPPING =========================
+
+    private async Task<PatientResponse?> GetPatientResponseAsync(int id)
     {
+        var patient = await _context.Patients
+            .Include(x => x.ApplicationUser)
+            .Include(x => x.InsuranceCompany)
+            .Include(x => x.InsuranceDetails)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        return patient is null ? null : MapToResponse(patient);
+    }
+
+    private static PatientResponse MapToResponse(Patient patient)
+    {
+        var user = patient.ApplicationUser;
+
+        return new PatientResponse
+        {
+            Id = patient.Id,
+            ApplicationUserId = patient.ApplicationUserId,
+            FullName = user.FullName,
+            Email = user.Email ?? string.Empty,
+            PhoneNumber = user.PhoneNumber ?? string.Empty,
+            Gender = user.Gender,
+            BirthDate = user.BirthDate,
+            PaymentType = patient.PaymentType,
+            EmergencyContact = patient.EmergencyContact,
+            InsuranceCompanyId = patient.InsuranceCompanyId,
+            InsuranceCompanyName = patient.InsuranceCompany?.Name,
+
+            // Map the entity to InsuranceDetailsResponse.
+            InsuranceDetails = patient.InsuranceDetails is null
+                ? null
+                : patient.InsuranceDetails
+                    .Adapt<InsuranceDetailsResponse>(),
+
+            CreatedAt = patient.CreatedAt
+        };
+    }
+
+    // ========================= IDENTITY LOGGING =========================
+
+    private void LogIdentityErrors(
+        string operation,
+        string userName,
+        IEnumerable<IdentityError> errors)
+    {
+        foreach (var error in errors)
+        {
+            _logger.LogWarning(
+                "Identity operation {Operation} failed for {UserName}. " +
+                "Code: {Code}. Description: {Description}",
+                operation,
+                userName,
+                error.Code,
+                error.Description);
+        }
+    }
+
+    // ========================= PASSWORD GENERATION =========================
+
+    private static string GeneratePassword(int length = 12)
+    {
+        if (length < 4)
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                "Password length must be at least 4.");
+
         const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         const string lower = "abcdefghijklmnopqrstuvwxyz";
         const string digits = "0123456789";
-        const string special = "!@#$%";
+        const string special = "!@#$%&*";
 
-        var random = new Random();
+        var allCharacters = upper + lower + digits + special;
 
         var password = new List<char>
         {
-            upper[random.Next(upper.Length)],
-            lower[random.Next(lower.Length)],
-            digits[random.Next(digits.Length)],
-            special[random.Next(special.Length)]
+            upper[RandomNumberGenerator.GetInt32(upper.Length)],
+            lower[RandomNumberGenerator.GetInt32(lower.Length)],
+            digits[RandomNumberGenerator.GetInt32(digits.Length)],
+            special[RandomNumberGenerator.GetInt32(special.Length)]
         };
 
-        string allChars = upper + lower + digits + special;
-        for (int i = password.Count; i < length; i++)
+        while (password.Count < length)
         {
-            password.Add(allChars[random.Next(allChars.Length)]);
+            password.Add(
+                allCharacters[
+                    RandomNumberGenerator.GetInt32(allCharacters.Length)]);
         }
 
-        return new string(password.OrderBy(_ => random.Next()).ToArray());
+        // Cryptographically secure shuffle.
+        for (var i = password.Count - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (password[i], password[j]) = (password[j], password[i]);
+        }
+
+        return new string(password.ToArray());
     }
 }

@@ -1,5 +1,4 @@
-﻿
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PTCenter.Application.Contracts.Billing;
 using PTCenter.Application.Interfaces;
 
@@ -28,19 +27,18 @@ public class BillingController : ControllerBase
     }
 
     [HttpGet("invoices/{id:int}")]
-    public async Task<IActionResult> GetInvoiceById(int id)
+    public async Task<InvoiceResponse> GetInvoiceById(int id) // تم تعديلها لتتوافق مع الـ Frontend أو إرجاع IActionResult
     {
         var result = await _billingService.GetInvoiceByIdAsync(id);
 
         if (result.IsFailure)
-            return NotFound(result.Error);
+            return null!; // أو NotFound
 
-        return Ok(result.Value);
+        return result.Value;
     }
 
     [HttpPost("invoices")]
-    public async Task<IActionResult> CreateInvoice(
-        [FromBody] CreateInvoiceRequest request)
+    public async Task<IActionResult> CreateInvoice([FromBody] CreateInvoiceRequest request)
     {
         var result = await _billingService.CreateInvoiceAsync(request);
 
@@ -51,12 +49,9 @@ public class BillingController : ControllerBase
     }
 
     [HttpPatch("invoices/{id:int}/status")]
-    public async Task<IActionResult> UpdateInvoiceStatus(
-        int id,
-        [FromBody] UpdateInvoiceStatusRequest request)
+    public async Task<IActionResult> UpdateInvoiceStatus(int id, [FromBody] UpdateInvoiceStatusRequest request)
     {
-        var result = await _billingService
-            .UpdateInvoiceStatusAsync(id, request);
+        var result = await _billingService.UpdateInvoiceStatusAsync(id, request);
 
         if (result.IsFailure)
             return BadRequest(result.Error);
@@ -76,8 +71,7 @@ public class BillingController : ControllerBase
     }
 
     [HttpPost("payments")]
-    public async Task<IActionResult> AddPayment(
-        [FromBody] CreatePaymentRequest request)
+    public async Task<IActionResult> AddPayment([FromBody] CreatePaymentRequest request)
     {
         var result = await _billingService.AddPaymentAsync(request);
 
@@ -88,11 +82,9 @@ public class BillingController : ControllerBase
     }
 
     [HttpGet("invoices/{invoiceId:int}/payments")]
-    public async Task<IActionResult> GetPaymentsByInvoiceId(
-        int invoiceId)
+    public async Task<IActionResult> GetPaymentsByInvoiceId(int invoiceId)
     {
-        var result = await _billingService
-            .GetPaymentsByInvoiceIdAsync(invoiceId);
+        var result = await _billingService.GetPaymentsByInvoiceIdAsync(invoiceId);
 
         if (result.IsFailure)
             return NotFound(result.Error);

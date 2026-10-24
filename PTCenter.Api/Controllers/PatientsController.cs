@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PTCenter.Api.Extensions;
 using PTCenter.Application.Contracts.Common;
@@ -10,14 +11,19 @@ namespace PTCenter.Api.Controllers;
 [ApiController]
 [Route("api/[controller]/[action]")]
 [Authorize]
-public class PatientsController(IPatientService patientService) : ControllerBase
+public class PatientsController(
+    IPatientService patientService) : ControllerBase
 {
     private readonly IPatientService _patientService = patientService;
 
+    
+    
     [HttpPost]
     [ProducesResponseType(typeof(PatientResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Add(CreatePatientRequest request)
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Add(
+    [FromBody] CreatePatientRequest request)
     {
         var result = await _patientService.AddAsync(request);
 
@@ -25,13 +31,13 @@ public class PatientsController(IPatientService patientService) : ControllerBase
             ? Ok(result.Value)
             : result.ToProblem();
     }
-
     [HttpGet]
     [ProducesResponseType(
-     typeof(PagedResponse<PatientResponse>),
-     StatusCodes.Status200OK)]
+        typeof(PagedResponse<PatientResponse>),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetAll(
-     [FromQuery] PatientQueryRequest request)
+        [FromQuery] PatientQueryRequest request)
     {
         var result = await _patientService.GetAllAsync(request);
 
@@ -56,7 +62,9 @@ public class PatientsController(IPatientService patientService) : ControllerBase
     [ProducesResponseType(typeof(PatientResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Update(int id, UpdatePatientRequest request)
+    public async Task<IActionResult> Update(
+        int id,
+        [FromBody] UpdatePatientRequest request)
     {
         var result = await _patientService.UpdateAsync(id, request);
 

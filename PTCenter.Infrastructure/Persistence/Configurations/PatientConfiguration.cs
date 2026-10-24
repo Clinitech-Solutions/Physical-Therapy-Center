@@ -15,6 +15,7 @@ namespace PTCenter.Infrastructure.Persistence.Configurations
             builder.HasOne(x => x.ApplicationUser).WithMany(x => x.Patients).HasForeignKey(x => x.ApplicationUserId).OnDelete(DeleteBehavior.Restrict);
             builder.HasOne(x => x.InsuranceCompany).WithMany(x => x.Patients).HasForeignKey(x => x.InsuranceCompanyId).OnDelete(DeleteBehavior.Restrict);
             builder.HasQueryFilter(x => !x.IsDeleted);
+            builder.OwnsOne(p => p.InsuranceDetails);
 
         }
     }

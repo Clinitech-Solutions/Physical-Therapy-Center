@@ -1,8 +1,6 @@
-﻿
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PTCenter.Application.Abstractions;
 using PTCenter.Application.Contracts.Billing;
-using PTCenter.Application.Contracts.Patients;
 using PTCenter.Application.Interfaces;
 using PTCenter.Domain.Entities;
 using PTCenter.Domain.Entities.Enums;
@@ -21,38 +19,49 @@ public class BillingService : IBillingService
 
     public async Task<Result<List<InvoiceResponse>>> GetAllInvoicesAsync()
     {
-        var invoices = await _context.Invoices
-            .AsNoTracking()
-            .OrderByDescending(x => x.Id)
-            .ToListAsync();
+        try
+        {
+            var invoices = await _context.Invoices
+                .Include(x => x.Patient)
+                .ThenInclude(x => x.ApplicationUser)
+                .Include(x => x.Payments)
+                .AsNoTracking()
+                .OrderByDescending(x => x.Id)
+                .ToListAsync();
 
-        var response = invoices.Select(MapInvoice).ToList();
+            var response = invoices.Select(MapInvoice).ToList();
 
-        return Result.Success(response);
+            return Result.Success(response);
+        }
+        catch (Exception ex)
+        {
+            // يمكنك تسجيل الخطأ هنا عبر Logger لو موجود
+            return Result.Failure<List<InvoiceResponse>>(new Error("Billing.DatabaseError", ex.Message, 500));
+        }
     }
 
     public async Task<Result<InvoiceResponse>> GetInvoiceByIdAsync(int id)
     {
         var invoice = await _context.Invoices
+            .Include(x => x.Patient)
+            .ThenInclude(x => x.ApplicationUser)
+            .Include(x => x.Payments)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (invoice is null)
         {
-            return Result.Failure<InvoiceResponse>(
-                BillingErrors.InvoiceNotFound);
+            return Result.Failure<InvoiceResponse>(BillingErrors.InvoiceNotFound);
         }
 
         return Result.Success(MapInvoice(invoice));
     }
 
-    public async Task<Result<InvoiceResponse>> CreateInvoiceAsync(
-        CreateInvoiceRequest request)
+    public async Task<Result<InvoiceResponse>> CreateInvoiceAsync(CreateInvoiceRequest request)
     {
         if (request.TotalAmount <= 0)
         {
-            return Result.Failure<InvoiceResponse>(
-                BillingErrors.InvalidAmount);
+            return Result.Failure<InvoiceResponse>(BillingErrors.InvalidAmount);
         }
 
         var appointmentExists = await _context.Appointments
@@ -60,8 +69,7 @@ public class BillingService : IBillingService
 
         if (!appointmentExists)
         {
-            return Result.Failure<InvoiceResponse>(
-                BillingErrors.AppointmentNotFound);
+            return Result.Failure<InvoiceResponse>(BillingErrors.AppointmentNotFound);
         }
 
         var patientExists = await _context.Patients
@@ -69,8 +77,7 @@ public class BillingService : IBillingService
 
         if (!patientExists)
         {
-            return Result.Failure<InvoiceResponse>(
-                BillingErrors.PatientNotFound);
+            return Result.Failure<InvoiceResponse>(BillingErrors.PatientNotFound);
         }
 
         var invoice = new Invoice
@@ -83,36 +90,31 @@ public class BillingService : IBillingService
         };
 
         _context.Invoices.Add(invoice);
-
         await _context.SaveChangesAsync();
 
-        return Result.Success(MapInvoice(invoice));
+        // إعادة جلب الفاتورة مع العلاقات لضمان اكتمال البيانات في الـ Response
+        return await GetInvoiceByIdAsync(invoice.Id);
     }
 
-    public async Task<Result<InvoiceResponse>> UpdateInvoiceStatusAsync(
-        int id,
-        UpdateInvoiceStatusRequest request)
+    public async Task<Result<InvoiceResponse>> UpdateInvoiceStatusAsync(int id, UpdateInvoiceStatusRequest request)
     {
         var invoice = await _context.Invoices
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (invoice is null)
         {
-            return Result.Failure<InvoiceResponse>(
-                BillingErrors.InvoiceNotFound);
+            return Result.Failure<InvoiceResponse>(BillingErrors.InvoiceNotFound);
         }
 
         if (invoice.Status == InvoiceStatus.Paid)
         {
-            return Result.Failure<InvoiceResponse>(
-                BillingErrors.PaidInvoiceCannotBeUpdated);
+            return Result.Failure<InvoiceResponse>(BillingErrors.PaidInvoiceCannotBeUpdated);
         }
 
         invoice.Status = request.Status;
-
         await _context.SaveChangesAsync();
 
-        return Result.Success(MapInvoice(invoice));
+        return await GetInvoiceByIdAsync(id);
     }
 
     public async Task<Result> DeleteInvoiceAsync(int id)
@@ -123,30 +125,25 @@ public class BillingService : IBillingService
 
         if (invoice is null)
         {
-            return Result.Failure(
-                BillingErrors.InvoiceNotFound);
+            return Result.Failure(BillingErrors.InvoiceNotFound);
         }
 
         if (invoice.Payments.Any())
         {
-            return Result.Failure(
-                BillingErrors.InvoiceHasPayments);
+            return Result.Failure(BillingErrors.InvoiceHasPayments);
         }
 
         _context.Invoices.Remove(invoice);
-
         await _context.SaveChangesAsync();
 
-        return Result.Success("Invoice deleted successfully.");
+        return Result.Success();
     }
 
-    public async Task<Result<PaymentResponse>> AddPaymentAsync(
-        CreatePaymentRequest request)
+    public async Task<Result<PaymentResponse>> AddPaymentAsync(CreatePaymentRequest request)
     {
         if (request.Amount <= 0)
         {
-            return Result.Failure<PaymentResponse>(
-                BillingErrors.InvalidAmount);
+            return Result.Failure<PaymentResponse>(BillingErrors.InvalidAmount);
         }
 
         var invoice = await _context.Invoices
@@ -155,15 +152,13 @@ public class BillingService : IBillingService
 
         if (invoice is null)
         {
-            return Result.Failure<PaymentResponse>(
-                BillingErrors.InvoiceNotFound);
+            return Result.Failure<PaymentResponse>(BillingErrors.InvoiceNotFound);
         }
 
         if (invoice.Status == InvoiceStatus.Cancelled ||
             invoice.Status == InvoiceStatus.Waived)
         {
-            return Result.Failure<PaymentResponse>(
-                BillingErrors.InvoiceCannotReceivePayment);
+            return Result.Failure<PaymentResponse>(BillingErrors.InvoiceCannotReceivePayment);
         }
 
         var alreadyPaid = invoice.Payments
@@ -174,8 +169,7 @@ public class BillingService : IBillingService
 
         if (request.Amount > remaining)
         {
-            return Result.Failure<PaymentResponse>(
-                BillingErrors.PaymentExceedsRemainingAmount);
+            return Result.Failure<PaymentResponse>(BillingErrors.PaymentExceedsRemainingAmount);
         }
 
         var payment = new Payment
@@ -200,16 +194,14 @@ public class BillingService : IBillingService
         return Result.Success(MapPayment(payment));
     }
 
-    public async Task<Result<List<PaymentResponse>>>
-        GetPaymentsByInvoiceIdAsync(int invoiceId)
+    public async Task<Result<List<PaymentResponse>>> GetPaymentsByInvoiceIdAsync(int invoiceId)
     {
         var invoiceExists = await _context.Invoices
             .AnyAsync(x => x.Id == invoiceId);
 
         if (!invoiceExists)
         {
-            return Result.Failure<List<PaymentResponse>>(
-                BillingErrors.InvoiceNotFound);
+            return Result.Failure<List<PaymentResponse>>(BillingErrors.InvoiceNotFound);
         }
 
         var payments = await _context.Payments
@@ -218,8 +210,7 @@ public class BillingService : IBillingService
             .OrderByDescending(x => x.PaymentDate)
             .ToListAsync();
 
-        return Result.Success(
-            payments.Select(MapPayment).ToList());
+        return Result.Success(payments.Select(MapPayment).ToList());
     }
 
     private static InvoiceResponse MapInvoice(Invoice invoice)
@@ -229,6 +220,7 @@ public class BillingService : IBillingService
             Id = invoice.Id,
             AppointmentId = invoice.AppointmentId,
             PatientId = invoice.PatientId,
+            PatientName = invoice.Patient?.ApplicationUser?.FullName ?? "Unknown",
             TotalAmount = invoice.TotalAmount,
             Type = invoice.Type,
             Status = invoice.Status
