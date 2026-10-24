@@ -631,9 +631,6 @@ namespace PTCenter.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<decimal>("CoveragePercent")
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -700,22 +697,41 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("InsuranceAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<decimal>("PaidAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<decimal>("PatientAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("PatientId")
                         .HasColumnType("int");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -724,6 +740,13 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId");
+
+                    b.HasIndex("InvoiceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId");
 
                     b.ToTable("Invoices");
                 });
@@ -807,9 +830,6 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Property<int?>("InsuranceCompanyId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("InsuranceStatus")
-                        .HasColumnType("int");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -840,6 +860,7 @@ namespace PTCenter.Infrastructure.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -865,13 +886,17 @@ namespace PTCenter.Infrastructure.Migrations
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<string>("TransactionId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -880,6 +905,8 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
 
                     b.ToTable("Payments");
                 });
@@ -1281,6 +1308,25 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Navigation("Patient");
                 });
 
+            modelBuilder.Entity("PTCenter.Domain.Entities.Invoice", b =>
+                {
+                    b.HasOne("PTCenter.Domain.Entities.Appointment", "Appointment")
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PTCenter.Domain.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Appointment");
+
+                    b.Navigation("Patient");
+                });
+
             modelBuilder.Entity("PTCenter.Domain.Entities.Patient", b =>
                 {
                     b.HasOne("PTCenter.Domain.Entities.ApplicationUser", "ApplicationUser")
@@ -1294,9 +1340,50 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasForeignKey("InsuranceCompanyId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.OwnsOne("PTCenter.Domain.Entities.InsuranceDetails", "InsuranceDetails", b1 =>
+                        {
+                            b1.Property<int>("PatientId")
+                                .HasColumnType("int");
+
+                            b1.Property<int?>("ApprovedSessions")
+                                .HasColumnType("int");
+
+                            b1.Property<decimal?>("CopayPercentage")
+                                .HasColumnType("decimal(18,2)");
+
+                            b1.Property<string>("Employer")
+                                .HasColumnType("nvarchar(max)");
+
+                            b1.Property<string>("MemberId")
+                                .HasColumnType("nvarchar(max)");
+
+                            b1.Property<int?>("Status")
+                                .HasColumnType("int");
+
+                            b1.HasKey("PatientId");
+
+                            b1.ToTable("InsuranceDetails");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PatientId");
+                        });
+
                     b.Navigation("ApplicationUser");
 
                     b.Navigation("InsuranceCompany");
+
+                    b.Navigation("InsuranceDetails");
+                });
+
+            modelBuilder.Entity("PTCenter.Domain.Entities.Payment", b =>
+                {
+                    b.HasOne("PTCenter.Domain.Entities.Invoice", "Invoice")
+                        .WithMany("Payments")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.TreatmentPlan", b =>
@@ -1342,6 +1429,11 @@ namespace PTCenter.Infrastructure.Migrations
             modelBuilder.Entity("PTCenter.Domain.Entities.InsuranceCompany", b =>
                 {
                     b.Navigation("Patients");
+                });
+
+            modelBuilder.Entity("PTCenter.Domain.Entities.Invoice", b =>
+                {
+                    b.Navigation("Payments");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.Patient", b =>

@@ -12,6 +12,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Patient> Patients { get; set; }
 
     public DbSet<InsuranceCompany> InsuranceCompanies { get; set; }
+    public DbSet<InsuranceDetails> InsuranceDetails { get; set; }
 
     public DbSet<InsuranceDocument> InsuranceDocuments { get; set; }
 

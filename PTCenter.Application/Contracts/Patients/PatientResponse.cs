@@ -26,8 +26,7 @@ namespace PTCenter.Application.Contracts.Patients
         public Gender Gender { get; set; }
 
         public string? InsuranceCompanyName { get; set; }
-        public InsuranceDetailsDto? InsuranceDetails { get; set; }
-
+        public InsuranceDetailsResponse? InsuranceDetails { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

@@ -11,18 +11,25 @@ public class AppointmentsController(IAppointmentService appointmentService) : Co
 {
     private readonly IAppointmentService _appointmentService = appointmentService;
 
-    [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] AppointmentQueryRequest request)
+    [HttpGet("GetAll")]
+    public async Task<IActionResult> GetAll(
+    [FromQuery] AppointmentQueryRequest request)
     {
         var result = await _appointmentService.GetAllAsync(request);
-        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
+
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : BadRequest(result.Error);
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
         var result = await _appointmentService.GetByIdAsync(id);
-        return result.IsSuccess ? Ok(result.Value) : NotFound(result.Error);
+
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : NotFound(result.Error);
     }
 
     [HttpPost]
