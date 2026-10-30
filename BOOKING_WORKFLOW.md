@@ -1,5 +1,11 @@
 # Booking workflow
 
+## Room availability and checkout
+
+`POST /api/Rooms/availability` is an authenticated staff read that accepts 1–200 `startsAt` values and returns active rooms free for every selected 60-minute interval. Overlapping Pending/InProgress reservations exclude the room. An InProgress appointment without ActualCheckOut continues to occupy its room even after its planned end; checkout releases that occupancy. Completed/cancelled/no-show appointments do not hold a reservation, and checkout never reactivates a maintenance room.
+
+Booking preview and commit enforce these rules independently of the dropdown, including overdue occupancy and immediate release of completed reservations. Room list/detail responses retain the existing StatusRoom contract and now derive ongoing occupancy from checkout state. The frontend refreshes rooms and availability only after confirmed appointment mutations. No database migration is required. All 33 backend relational/HTTP tests and 58 focused frontend tests pass.
+
 ## Staff working-hours setup
 
 The CEO Staff Management Add User and Edit User forms own working days/time ranges. `POST /api/Users/Add` and `POST /api/Users/Update?userId=...` accept `workingHours`, a list of `dayOfWeek` (Sunday 0 through Saturday 6), `startTime` and `endTime` windows in Cairo time. User responses and the staff directory return the saved hours. Existing Users authorization (Admin, Owner, Ceo) controls changes.

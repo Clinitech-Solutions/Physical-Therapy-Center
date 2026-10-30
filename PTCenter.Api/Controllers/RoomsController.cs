@@ -10,6 +10,14 @@ public class RoomsController(IRoomService roomService) : ControllerBase
 {
     private readonly IRoomService _roomService = roomService;
 
+    [HttpPost("availability")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Receptionist,Senior,Doctor,Ceo,Admin,Owner")]
+    public async Task<IActionResult> Availability(RoomAvailabilityRequest request)
+    {
+        var result = await _roomService.GetAvailableAsync(request);
+        return result.IsSuccess ? Ok(result.Value) : StatusCode(result.Error.StatusCode ?? 400, result.Error);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {

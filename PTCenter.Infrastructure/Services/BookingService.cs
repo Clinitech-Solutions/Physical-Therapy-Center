@@ -135,7 +135,8 @@ public class BookingService(ApplicationDbContext db)
             if (absences.Any(a => a.AbsentDate == DateOnly.FromDateTime(local.DateTime))) conflicts.Add("ClinicianAbsent");
             var utc = start.UtcDateTime; var utcEnd = end.UtcDateTime;
             var overlaps = await db.Appointments.AsNoTracking().Where(a => a.Id != excludeAppointment &&
-                a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow && a.StartTime < utcEnd && a.EndTime > utc &&
+                a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow && a.Status != AppointmentStatus.Completed &&
+                (a.StartTime < utcEnd && a.EndTime > utc || a.RoomId == request.RoomId && a.Status == AppointmentStatus.InProgress && a.ActualCheckOut == null) &&
                 (a.PatientId == request.PatientId || a.RoomId == request.RoomId || a.DoctorId == request.ClinicianId || a.SeniorId == request.ClinicianId)).ToListAsync();
             if (overlaps.Any(a => a.PatientId == request.PatientId)) conflicts.Add("PatientConflict");
             if (overlaps.Any(a => a.RoomId == request.RoomId)) conflicts.Add("RoomConflict");

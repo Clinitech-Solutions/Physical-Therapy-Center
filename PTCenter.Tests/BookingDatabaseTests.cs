@@ -236,6 +236,45 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
         var patient=await db.Patients.FindAsync(patientId);patient!.PaymentType=null;await db.SaveChangesAsync();
         Assert.Contains("FundingTypeRequired",(await service.PreviewAsync(Assessment())).Errors);
     }
+    [Fact] public async Task Room_availability_excludes_reservations_for_any_selected_slot_and_cancellation_releases_them()
+    {
+        var rooms = new RoomService(db);
+        var receipt = await service.CreateAsync(Assessment());
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start.AddHours(1)] })).Value);
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start.AddDays(1), start] })).Value);
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.Cancelled);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+    }
+
+    [Fact] public async Task An_occupied_room_stays_unavailable_past_planned_end_and_checkout_releases_it_immediately()
+    {
+        var rooms = new RoomService(db);
+        var receipt = await service.CreateAsync(Assessment());
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.InProgress);
+        var appointment = await db.Appointments.FindAsync(receipt.Appointments[0].Id);
+        appointment!.StartTime = DateTime.UtcNow.AddHours(-3); appointment.EndTime = DateTime.UtcNow.AddHours(-2);
+        await db.SaveChangesAsync();
+        Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Occupied, (await rooms.GetByIdAsync(1)).Value.Status);
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.Contains("RoomConflict", (await service.PreviewAsync(Assessment())).Appointments[0].Conflicts);
+        await service.TransitionAsync(appointment.Id, AppointmentStatus.Completed);
+        Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Available, (await rooms.GetByIdAsync(1)).Value.Status);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+    }
+
+    [Fact] public async Task Early_checkout_releases_the_original_reserved_interval_without_reactivating_maintenance_rooms()
+    {
+        var rooms = new RoomService(db);
+        var receipt = await service.CreateAsync(Assessment());
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.InProgress);
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.Completed);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.True((await service.PreviewAsync(Assessment())).CanSave);
+        var room = await db.Rooms.FindAsync(1); room!.IsActive = false; await db.SaveChangesAsync();
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Maintenance, (await rooms.GetByIdAsync(1)).Value.Status);
+    }
     [Fact] public async Task Saving_explicit_Cairo_working_hours_unblocks_a_missing_schedule_and_allows_booking()
     {
         db.DoctorSchedules.RemoveRange(await db.DoctorSchedules.Where(s => s.DoctorId == "senior").ToListAsync());
