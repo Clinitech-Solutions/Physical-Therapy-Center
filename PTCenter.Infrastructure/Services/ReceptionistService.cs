@@ -8,7 +8,7 @@ using PTCenter.Infrastructure.Persistence;
 
 namespace PTCenter.Infrastructure.Services;
 
-public class ReceptionistService(ApplicationDbContext context) : IReceptionistService
+public class ReceptionistService(ApplicationDbContext context, BookingService bookings) : IReceptionistService
 {
     private readonly ApplicationDbContext _context = context;
 
@@ -34,7 +34,7 @@ public class ReceptionistService(ApplicationDbContext context) : IReceptionistSe
             .ToListAsync();
 
         var totalExpected = invoicesToday.Sum(x => x.TotalAmount);
-        var totalCollected = invoicesToday.Sum(x => x.PatientAmount);
+        var totalCollected = await _context.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentDate.Date == today).SumAsync(p => p.Amount);
 
         double collectionRate = totalExpected > 0 ? (double)(totalCollected / totalExpected) * 100 : 0;
 
@@ -95,10 +95,13 @@ public class ReceptionistService(ApplicationDbContext context) : IReceptionistSe
             .Select(x => new TodaySessionResponse
             {
                 Id = x.Id,
+                PatientId = x.PatientId, DoctorId = x.DoctorId, SeniorId = x.SeniorId, RoomId = x.RoomId,
+                AppointmentType = x.AppointmentType, StartTime = x.StartTime, EndTime = x.EndTime,
+                ActualCheckIn = x.ActualCheckIn, ActualCheckOut = x.ActualCheckOut,
                 Time = x.StartTime.ToString("hh:mm tt"),
                 PatientName = x.Patient.ApplicationUser.FullName,
                 SessionNumber = x.TreatmentPlanSession != null ? $"Session {x.TreatmentPlanSession.SessionNumber}" : null,
-                DoctorName = x.Doctor != null ? x.Doctor.FullName : "Not Assigned",
+                DoctorName = x.Doctor != null ? x.Doctor.FullName : _context.Users.Where(u => u.Id == x.SeniorId).Select(u => u.FullName).FirstOrDefault() ?? "Not Assigned",
                 RoomName = x.Room != null ? x.Room.Name : "No Room",
                 Status = x.Status.ToString()
             })
@@ -120,33 +123,9 @@ public class ReceptionistService(ApplicationDbContext context) : IReceptionistSe
 
     public async Task<Result> UpdateAppointmentStatusAsync(int appointmentId, AppointmentStatus newStatus)
     {
-        var appointment = await _context.Appointments.FindAsync(appointmentId);
-        if (appointment == null)
-        {
-            return Result.Failure(ReceptionistErrors.AppointmentNotFound);
-        }
-
-        appointment.Status = newStatus;
-
-        _context.Appointments.Update(appointment);
-        await _context.SaveChangesAsync();
-
-        return Result.Success();
+        try { await bookings.TransitionAsync(appointmentId, newStatus); return Result.Success(); }
+        catch (BookingRuleException e) { return Result.Failure(new(e.Code, e.Message, e.Status)); }
     }
 
-    public async Task<Result> CancelAppointmentAsAbsentAsync(int appointmentId)
-    {
-        var appointment = await _context.Appointments.FindAsync(appointmentId);
-        if (appointment == null)
-        {
-            return Result.Failure(ReceptionistErrors.AppointmentNotFound);
-        }
-
-        appointment.Status = AppointmentStatus.Cancelled;
-
-        _context.Appointments.Update(appointment);
-        await _context.SaveChangesAsync();
-
-        return Result.Success();
-    }
+    public Task<Result> CancelAppointmentAsAbsentAsync(int appointmentId) => UpdateAppointmentStatusAsync(appointmentId, AppointmentStatus.Cancelled);
 }

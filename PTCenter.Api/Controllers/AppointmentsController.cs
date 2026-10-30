@@ -1,11 +1,13 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PTCenter.Application.Contracts.Appointments;
 using PTCenter.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 
 namespace PTCenter.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
+[Authorize(Roles = "Receptionist,Senior,Doctor,Ceo,Admin,Owner")]
 public class AppointmentsController(
     IAppointmentService appointmentService) : ControllerBase
 {

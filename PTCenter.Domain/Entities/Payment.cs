@@ -14,6 +14,7 @@ public class Payment : BaseEntity
     public PaymentMethod PaymentMethod { get; set; }
 
     public string? TransactionId { get; set; }
+    public string? IdempotencyKey { get; set; }
 
     public DateTime PaymentDate { get; set; } = DateTime.UtcNow;
 

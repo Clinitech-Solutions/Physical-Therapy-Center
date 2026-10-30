@@ -4,6 +4,8 @@ using PTCenter.Domain.Entities.Enums;
 public class Assessment : BaseEntity
 {
     public int Id { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public int? AppointmentId { get; set; }
 
     public int PatientId { get; set; }
 

@@ -10,6 +10,8 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
     public void Configure(EntityTypeBuilder<Payment> b)
     {
         b.HasKey(x => x.Id);
+        b.Property(x => x.IdempotencyKey).HasMaxLength(120);
+        b.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
 
         b.Property(x => x.Amount)
             .HasPrecision(18, 2)

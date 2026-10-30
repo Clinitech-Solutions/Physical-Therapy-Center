@@ -14,6 +14,11 @@ public class Appointment : BaseEntity
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
     public AppointmentStatus Status { get; set; }
+    public int? BookingBatchId { get; set; }
+    public int? BookingSequence { get; set; }
+    public bool InsuranceFunded { get; set; }
+    public DateTime? ActualCheckIn { get; set; }
+    public DateTime? ActualCheckOut { get; set; }
 
     // أضف هذه الـ Navigation Properties لكي يعمل الـ Include في الـ Service بنجاح:
     public virtual Patient Patient { get; set; } = null!;

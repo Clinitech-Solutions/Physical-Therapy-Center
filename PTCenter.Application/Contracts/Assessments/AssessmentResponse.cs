@@ -5,6 +5,7 @@ namespace PTCenter.Application.Contracts.Assessments;
 public class AssessmentResponse
 {
     public int Id { get; set; }
+    public DateTime? CompletedAt { get; set; }
 
     public int PatientId { get; set; }
 

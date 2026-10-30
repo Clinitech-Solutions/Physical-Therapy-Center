@@ -7,6 +7,15 @@ namespace PTCenter.Application.Contracts.Receptionist
          public class TodaySessionResponse
         {
             public int Id { get; set; }
+            public int PatientId { get; set; }
+            public string? DoctorId { get; set; }
+            public string? SeniorId { get; set; }
+            public int? RoomId { get; set; }
+            public string AppointmentType { get; set; } = "";
+            public DateTime StartTime { get; set; }
+            public DateTime EndTime { get; set; }
+            public DateTime? ActualCheckIn { get; set; }
+            public DateTime? ActualCheckOut { get; set; }
             public string Time { get; set; } = default!;
             public string PatientName { get; set; } = default!;
             public string? SessionNumber { get; set; } // مثال: Session 5 of 10

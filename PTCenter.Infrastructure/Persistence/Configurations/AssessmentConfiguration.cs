@@ -9,6 +9,8 @@ public class AssessmentConfiguration : IEntityTypeConfiguration<Assessment>
     public void Configure(EntityTypeBuilder<Assessment> builder)
     {
         builder.HasKey(x => x.Id);
+        builder.HasIndex(x => x.AppointmentId).IsUnique().HasFilter("[AppointmentId] IS NOT NULL");
+        builder.HasOne<Appointment>().WithMany().HasForeignKey(x => x.AppointmentId).OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(x => x.Diagnosis)
             .IsRequired();

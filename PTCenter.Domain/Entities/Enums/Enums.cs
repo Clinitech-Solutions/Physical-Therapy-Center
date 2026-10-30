@@ -27,7 +27,8 @@ namespace PTCenter.Domain.Entities.Enums
         Pending,
         Completed,
         Cancelled,
-        NoShow
+        NoShow,
+        InProgress = 4
     }
     
     public enum StatusPlan

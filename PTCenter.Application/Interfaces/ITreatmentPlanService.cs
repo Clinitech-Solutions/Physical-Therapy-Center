@@ -12,7 +12,7 @@ public interface ITreatmentPlanService
     Task<Result<TreatmentPlanResponse>> GetByIdAsync(
         int id);
 
-    Task<Result<List<TreatmentPlanResponse>>> GetAllAsync();
+    Task<Result<List<TreatmentPlanResponse>>> GetAllAsync(int? patientId = null);
 
     Task<Result<TreatmentPlanResponse>> UpdateAsync(
         int id,

@@ -206,6 +206,7 @@ public class AssessmentService(
         return new AssessmentResponse
         {
             Id = assessment.Id,
+            CompletedAt = assessment.CompletedAt,
 
             PatientId = assessment.PatientId,
 
