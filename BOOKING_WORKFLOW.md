@@ -1,5 +1,7 @@
 # Booking workflow
 
+**Status update (2026-10-30):** Following the user's confirmation of Mina's approval and a backup, `20261029124607_BookingWorkflow` was applied to the confirmed `db56823.public.databaseasp.net / db56823` target. No migrations remain pending; the invoice and today-sessions service reads succeed. All 25 backend and 58 focused frontend booking checks pass. The SQL Server idempotent backfill compilation issue was corrected before successful application. See [MIGRATION_VERIFICATION.md](MIGRATION_VERIFICATION.md) for the review and execution evidence. Earlier migration-gate notes below are historical.
+
 Implemented together with the sibling `physical-therapy-project-Admin-Panel` repository. No production database, push, or deployment is part of verification.
 
 ## Behavior
