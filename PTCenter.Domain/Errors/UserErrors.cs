@@ -19,6 +19,7 @@ public class UserErrors
     public static readonly Error UserNotFound = new("User.NotFound", "User is not found ", StatusCodes.Status404NotFound);
 
     public static readonly Error InvalidRoles = new("User.InvalidRoles", "Invalid Roles", StatusCodes.Status400BadRequest);
+    public static readonly Error InvalidWorkingHours = new("User.InvalidWorkingHours", "Choose valid working days and same-day time ranges without overlaps. Working hours are available for staff accounts only.", StatusCodes.Status400BadRequest);
     public static readonly Error UserAlreadyExists = new("User.UserAlreadyExists", "User with the same username or email already exists", StatusCodes.Status409Conflict);
     public static readonly Error RegistrationFailed = new("User.RegistrationFailed", "User registration failed", StatusCodes.Status400BadRequest);
     public static readonly Error UserNotVerified = new("User.UserNotVerified", "User is not verified", StatusCodes.Status403Forbidden);
@@ -52,7 +53,3 @@ public class UserErrors
         "Invalid Google token.",
         StatusCodes.Status401Unauthorized);
 }
-
- 
-
-    

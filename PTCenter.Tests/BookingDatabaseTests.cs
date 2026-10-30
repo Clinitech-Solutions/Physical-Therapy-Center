@@ -236,4 +236,19 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
         var patient=await db.Patients.FindAsync(patientId);patient!.PaymentType=null;await db.SaveChangesAsync();
         Assert.Contains("FundingTypeRequired",(await service.PreviewAsync(Assessment())).Errors);
     }
+    [Fact] public async Task Saving_explicit_Cairo_working_hours_unblocks_a_missing_schedule_and_allows_booking()
+    {
+        db.DoctorSchedules.RemoveRange(await db.DoctorSchedules.Where(s => s.DoctorId == "senior").ToListAsync());
+        await db.SaveChangesAsync();
+        var request = Assessment(); // Monday 10:00 UTC = 12:00 Cairo in February.
+        Assert.Contains("WorkingHoursNotConfigured", (await service.PreviewAsync(request)).Appointments[0].Conflicts);
+        db.DoctorSchedules.Add(new DoctorSchedule { DoctorId = "senior", DayOfWeek = (int)DayOfWeek.Monday, StartTime = new(12, 0), EndTime = new(13, 0) });
+        await db.SaveChangesAsync();
+        Assert.True((await service.PreviewAsync(request)).CanSave);
+        var receipt = await service.CreateAsync(request);
+        Assert.Single(receipt.Appointments);
+        Assert.Equal(request.StartsAt[0], receipt.Appointments[0].StartTime);
+        request.StartsAt = [start.AddMinutes(30)];
+        Assert.Contains("OutsideWorkingHours", (await service.PreviewAsync(request)).Appointments[0].Conflicts);
+    }
 }

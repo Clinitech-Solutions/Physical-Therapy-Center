@@ -21,6 +21,31 @@ public class UserService(
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
     private readonly ApplicationDbContext _context = context;
 
+    private static bool ValidWorkingHours(List<StaffWorkingHours>? hours, List<string> roles)
+    {
+        if (hours == null || hours.Count == 0) return true;
+        if (hours.Count > 28 || !roles.Any(role => role != "Patient") ||
+            hours.Any(window => window.DayOfWeek is < 0 or > 6 || window.StartTime >= window.EndTime)) return false;
+        return hours.GroupBy(window => window.DayOfWeek).All(group => {
+            var ordered = group.OrderBy(window => window.StartTime).ToArray();
+            return Enumerable.Range(1, ordered.Length - 1).All(index => ordered[index - 1].EndTime <= ordered[index].StartTime);
+        });
+    }
+
+    private async Task SaveWorkingHoursAsync(string userId, List<StaffWorkingHours>? hours)
+    {
+        if (hours == null) return; // Older callers that omit this field preserve the saved schedule.
+        var existing = await _context.DoctorSchedules.Where(window => window.DoctorId == userId).ToListAsync();
+        _context.DoctorSchedules.RemoveRange(existing.Where(window => !hours.Any(h => h.DayOfWeek == window.DayOfWeek && h.StartTime == window.StartTime && h.EndTime == window.EndTime)));
+        foreach (var hour in hours.Where(hour => !existing.Any(window => window.DayOfWeek == hour.DayOfWeek && window.StartTime == hour.StartTime && window.EndTime == hour.EndTime)))
+            _context.DoctorSchedules.Add(new DoctorSchedule { DoctorId = userId, DayOfWeek = hour.DayOfWeek, StartTime = hour.StartTime, EndTime = hour.EndTime });
+        await _context.SaveChangesAsync();
+    }
+
+    private Task<List<StaffWorkingHours>> WorkingHoursAsync(string userId) => _context.DoctorSchedules.AsNoTracking()
+        .Where(window => window.DoctorId == userId).OrderBy(window => window.DayOfWeek).ThenBy(window => window.StartTime)
+        .Select(window => new StaffWorkingHours(window.DayOfWeek, window.StartTime, window.EndTime)).ToListAsync();
+
     public async Task<Result<UserProfileResponse>> GetProfileAsync(string userId)
     {
         if (await _userManager.FindByIdAsync(userId) is not { } user)
@@ -37,6 +62,7 @@ public class UserService(
     public async Task<Result<List<UserResponse>>> GetAllAsync()
     {
         var users = await _userManager.Users.ToListAsync();
+        var schedules = (await _context.DoctorSchedules.AsNoTracking().ToListAsync()).ToLookup(window => window.DoctorId);
 
         var userResponses = new List<UserResponse>();
 
@@ -46,6 +72,8 @@ public class UserService(
 
             var userResponse = user.Adapt<UserResponse>();
             userResponse.Roles = roles;
+            userResponse.WorkingHours = schedules[user.Id].OrderBy(window => window.DayOfWeek).ThenBy(window => window.StartTime)
+                .Select(window => new StaffWorkingHours(window.DayOfWeek, window.StartTime, window.EndTime)).ToList();
 
             userResponses.Add(userResponse);
         }
@@ -81,6 +109,7 @@ public class UserService(
 
     public async Task<Result<UserResponse>> AddAsync(CreateUserRequest request)
     {
+        if (!ValidWorkingHours(request.WorkingHours, request.Roles)) return Result.Failure<UserResponse>(UserErrors.InvalidWorkingHours);
         // Check duplicate username
         if (await _context.Users.AnyAsync(x => x.UserName == request.UserName))
         {
@@ -100,6 +129,7 @@ public class UserService(
                 UserErrors.InvalidRoles);
         }
 
+        await using var transaction = await _context.Database.BeginTransactionAsync();
         // Create user explicitly
         // This fixes the FullName NULL problem
         var user = new ApplicationUser
@@ -148,11 +178,15 @@ public class UserService(
         var response = user.Adapt<UserResponse>();
 
         response.Roles = request.Roles;
-
+        await SaveWorkingHoursAsync(user.Id, request.WorkingHours);
+        response.WorkingHours = await WorkingHoursAsync(user.Id);
+        await transaction.CommitAsync();
         return Result.Success(response);
     }
     public async Task<Result<UserResponse>> UpdateAsync(string userId, UpdateUserRequest request)
-    { // Find user
+    {
+        if (!ValidWorkingHours(request.WorkingHours, request.Roles)) return Result.Failure<UserResponse>(UserErrors.InvalidWorkingHours);
+        // Find user
         if (await _userManager.FindByIdAsync(userId) is not { } user)
         { return Result.Failure<UserResponse>(UserErrors.UserNotFound); }
         // Check duplicate username
@@ -163,6 +197,7 @@ public class UserService(
             .ToListAsync();
         if (request.Roles.Except(allowedRoles).Any())
         { return Result.Failure<UserResponse>(UserErrors.InvalidRoles); }
+        await using var transaction = await _context.Database.BeginTransactionAsync();
         // Update user properties
         user.UserName = request.UserName;
         user.FullName = request.FullName;
@@ -190,7 +225,11 @@ public class UserService(
             return Result.Failure<UserResponse>(new Error(error.Code, error.Description, StatusCodes.Status400BadRequest));
         }
         var response = user.Adapt<UserResponse>();
-        response.Roles = request.Roles; return Result.Success(response);
+        response.Roles = request.Roles;
+        await SaveWorkingHoursAsync(user.Id, request.WorkingHours);
+        response.WorkingHours = await WorkingHoursAsync(user.Id);
+        await transaction.CommitAsync();
+        return Result.Success(response);
     }
     public async Task<Result> DeleteAsync(string userId)
     {

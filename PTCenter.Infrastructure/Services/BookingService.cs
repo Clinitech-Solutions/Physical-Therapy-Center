@@ -129,7 +129,8 @@ public class BookingService(ApplicationDbContext db)
             var conflicts = new List<string>();
             if (start <= DateTimeOffset.UtcNow) conflicts.Add("TimeInPast");
             if (request.StartsAt.Count(s => s < end && s.AddMinutes(60) > start) > 1) conflicts.Add("DuplicateSlot");
-            if (!schedules.Any(s => s.DayOfWeek == (int)local.DayOfWeek && s.StartTime <= TimeOnly.FromDateTime(local.DateTime) &&
+            if (schedules.Count == 0) conflicts.Add("WorkingHoursNotConfigured");
+            else if (!schedules.Any(s => s.DayOfWeek == (int)local.DayOfWeek && s.StartTime <= TimeOnly.FromDateTime(local.DateTime) &&
                 s.EndTime >= TimeOnly.FromDateTime(localEnd.DateTime) && local.Date == localEnd.Date)) conflicts.Add("OutsideWorkingHours");
             if (absences.Any(a => a.AbsentDate == DateOnly.FromDateTime(local.DateTime))) conflicts.Add("ClinicianAbsent");
             var utc = start.UtcDateTime; var utcEnd = end.UtcDateTime;

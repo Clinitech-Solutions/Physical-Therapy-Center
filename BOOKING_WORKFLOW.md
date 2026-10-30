@@ -1,5 +1,13 @@
 # Booking workflow
 
+## Staff working-hours setup
+
+The CEO Staff Management Add User and Edit User forms own working days/time ranges. `POST /api/Users/Add` and `POST /api/Users/Update?userId=...` accept `workingHours`, a list of `dayOfWeek` (Sunday 0 through Saturday 6), `startTime` and `endTime` windows in Cairo time. User responses and the staff directory return the saved hours. Existing Users authorization (Admin, Owner, Ceo) controls changes.
+
+User details, roles and working hours save in one database transaction. Invalid days, reversed windows and overlapping windows are rejected before changing the user. Editing supports changing days/time ranges and removing windows; identical saves retain existing rows, removed windows are soft-deleted. Omitting `workingHours` preserves existing hours for older callers; explicitly sending `[]` clears the active schedule. Patient-only accounts cannot have staff working hours. No hours are inferred or seeded, and no schema migration is required.
+
+Booking has no working-hours editor, read request, or save action, and its former working-hours routes have been removed. Booking previews distinguish `WorkingHoursNotConfigured` from a time outside an existing schedule and direct staff to CEO Staff Management for setup. The full 60-minute appointment must still fit inside a saved window; conflict and absence checks remain in effect. Restart the local API after updating to load the new Users contract. Verification: 30 backend tests and 27 focused staff/booking frontend tests pass; the production frontend build is warning-free.
+
 **Status update (2026-10-30):** Following the user's confirmation of Mina's approval and a backup, `20261029124607_BookingWorkflow` was applied to the confirmed `db56823.public.databaseasp.net / db56823` target. No migrations remain pending; the invoice and today-sessions service reads succeed. All 25 backend and 58 focused frontend booking checks pass. The SQL Server idempotent backfill compilation issue was corrected before successful application. See [MIGRATION_VERIFICATION.md](MIGRATION_VERIFICATION.md) for the review and execution evidence. Earlier migration-gate notes below are historical.
 
 Implemented together with the sibling `physical-therapy-project-Admin-Panel` repository. No production database, push, or deployment is part of verification.
