@@ -122,7 +122,8 @@ namespace PTCenter.Infrastructure.Migrations
 
             // Backfill funding only where an existing invoice is evidence of insurer liability.
             // Clinical completion and actual attendance are intentionally not inferred from severity or planned times.
-            migrationBuilder.Sql("UPDATE a SET [InsuranceFunded] = 1 FROM [Appointments] a WHERE EXISTS (SELECT 1 FROM [Invoices] i WHERE i.[AppointmentId] = a.[Id] AND i.[InsuranceAmount] > 0 AND i.[IsDeleted] = 0);");
+            // Compile the backfill only after ADD COLUMN, including in a single-batch idempotent script.
+            migrationBuilder.Sql("EXEC(N'UPDATE a SET [InsuranceFunded] = 1 FROM [Appointments] a WHERE EXISTS (SELECT 1 FROM [Invoices] i WHERE i.[AppointmentId] = a.[Id] AND i.[InsuranceAmount] > 0 AND i.[IsDeleted] = 0);');");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Payments_IdempotencyKey",

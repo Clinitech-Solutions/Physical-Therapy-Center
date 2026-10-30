@@ -1,5 +1,7 @@
 # Read-only database target audit
 
+**Status update (2026-10-30):** The user confirmed Mina's migration approval and an existing backup. The live target was confirmed as `db56823.public.databaseasp.net / db56823`, and only `20261029124607_BookingWorkflow` was reviewed and applied. Migration history, schema and service reads were verified; 25 backend and 58 frontend booking checks passed. See [MIGRATION_VERIFICATION.md](MIGRATION_VERIFICATION.md). The audit and approval gate below describe the earlier state and are superseded for this migration execution.
+
 Inspected on 2026-10-29 at approximately 23:00 Africa/Cairo. No SQL connection was opened. No database was created, migration applied, application configuration changed, or service stopped/started.
 
 ## Configured target and precedence
