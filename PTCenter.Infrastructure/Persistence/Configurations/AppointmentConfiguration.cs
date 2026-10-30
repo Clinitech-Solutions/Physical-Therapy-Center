@@ -11,6 +11,12 @@ namespace PTCenter.Infrastructure.Persistence.Configurations
         public void Configure(EntityTypeBuilder<Appointment> b)
         { 
             b.HasKey(x => x.Id); b.HasQueryFilter(x => !x.IsDeleted); 
+            b.HasOne<BookingBatch>().WithMany().HasForeignKey(x => x.BookingBatchId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => new { x.BookingBatchId, x.BookingSequence }).IsUnique().HasFilter("[BookingBatchId] IS NOT NULL");
+            b.HasIndex(x => new { x.DoctorId, x.StartTime });
+            b.HasIndex(x => new { x.SeniorId, x.StartTime });
+            b.HasIndex(x => new { x.RoomId, x.StartTime });
+            b.HasIndex(x => new { x.PatientId, x.StartTime });
         }
     }
 }

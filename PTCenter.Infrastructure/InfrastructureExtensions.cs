@@ -40,6 +40,7 @@ public static class InfrastructureExtensions
             services.AddScoped<ITreatmentPlanSessionService, TreatmentPlanSessionService>();
             services.AddScoped<IAssessmentService, AssessmentService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<BookingService>();
             services.AddScoped<IReceptionistService, ReceptionistService>();
             services.AddScoped<IBillingService, BillingService>();
             services.AddScoped<IRoomService, RoomService>();

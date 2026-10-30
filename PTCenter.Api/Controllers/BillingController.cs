@@ -1,10 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PTCenter.Application.Contracts.Billing;
 using PTCenter.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 
 namespace PTCenter.Api.Controllers;
 
 [ApiController]
+[Authorize(Roles = "Receptionist,Senior,Doctor,Ceo,Admin,Owner")]
 [Route("api/[controller]")]
 public class BillingController : ControllerBase
 {

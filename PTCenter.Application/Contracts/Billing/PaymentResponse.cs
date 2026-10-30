@@ -8,6 +8,7 @@ namespace PTCenter.Application.Contracts.Billing
     public class PaymentResponse
     {
         public int Id { get; set; }
+        public string? IdempotencyKey { get; set; }
 
         public int InvoiceId { get; set; }
 

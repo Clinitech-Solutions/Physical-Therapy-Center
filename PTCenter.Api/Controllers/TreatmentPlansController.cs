@@ -36,9 +36,9 @@ public class TreatmentPlansController(
     [ProducesResponseType(
         typeof(List<TreatmentPlanResponse>),
         StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] int? patientId)
     {
-        var result = await _treatmentPlanService.GetAllAsync();
+        var result = await _treatmentPlanService.GetAllAsync(patientId);
 
         return result.IsSuccess
             ? Ok(result.Value)

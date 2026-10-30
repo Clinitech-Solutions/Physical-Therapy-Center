@@ -218,7 +218,8 @@ public class PatientService(
             PageSize = request.PageSize,
             TotalCount = totalCount,
             TotalPages = totalPages
-        });
+        };
+        return Result.Success(response);
     }
 
     // ========================= GET PATIENT BY ID =========================

@@ -19,6 +19,8 @@ public class TreatmentPlanSessionService(
     public async Task<Result<TreatmentPlanSessionResponse>> AddAsync(
         CreateTreatmentPlanSessionRequest request)
     {
+        if (request.PaymentStatus != PaymentStatus.Pending || request.Status != SessionStatus.Pending || request.CheckIn != null || request.CheckOut != null || request.SessionDate != null)
+            return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedSession", "Create an unbooked session here. Scheduling, actual attendance and payment coverage are recorded through the booking workflow.", 400));
         if (request.SessionNumber <= 0)
         {
             return Result.Failure<TreatmentPlanSessionResponse>(
@@ -183,6 +185,12 @@ public class TreatmentPlanSessionService(
                 TreatmentPlanSessionErrors.InvalidCheckInOut);
         }
 
+        if (request.PaymentStatus != session.PaymentStatus)
+            return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedPaymentStatus", "Payment coverage is calculated from saved payments, never from a session status flag.", 400));
+        if (request.CheckIn != session.CheckIn || request.CheckOut != session.CheckOut || request.Status != session.Status || request.SessionDate != session.SessionDate)
+            return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedAttendance", "Use the appointment reschedule and explicit check-in/check-out actions. Session notes remain editable here.", 400));
+        if (request.SessionNumber != session.SessionNumber && await _context.Appointments.AnyAsync(a => a.TreatmentPlanSessionId == id))
+            return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedSession", "A booked session allocation cannot be renumbered.", 409));
         session.SessionNumber = request.SessionNumber;
         session.SessionDate = request.SessionDate;
         session.CheckIn = request.CheckIn;
@@ -210,6 +218,8 @@ public class TreatmentPlanSessionService(
         }
 
         var treatmentPlanId = session.TreatmentPlanId;
+        if (await _context.Appointments.AnyAsync(a => a.TreatmentPlanSessionId == id))
+            return Result.Failure(new("Booking.ManagedSession", "A session linked to a booking cannot be deleted. Reschedule its appointment instead.", 409));
 
         try
         {

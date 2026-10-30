@@ -7,6 +7,9 @@ namespace PTCenter.Application.Contracts.Appointments
     public class CreateAppointmentRequest
     {
         public int PatientId { get; set; }
+        public string? IdempotencyKey { get; set; }
+        public string? AssessmentCharge { get; set; }
+        public decimal? UnitPrice { get; set; }
         public string? DoctorId { get; set; }
         public string? SeniorId { get; set; }
         public int? RoomId { get; set; }

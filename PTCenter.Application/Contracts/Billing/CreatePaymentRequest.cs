@@ -11,12 +11,14 @@ namespace PTCenter.Application.Contracts.Billing
         [Required]
         [Range(1, int.MaxValue)]
         public int InvoiceId { get; set; }
+        [Required, MaxLength(90)]
+        public string IdempotencyKey { get; set; } = "";
 
         [Required]
         [Range(typeof(decimal), "0.01", "999999999")]
         public decimal Amount { get; set; }
 
         [Required]
-        public PaymentMethod Method { get; set; }
+        public PaymentMethod? Method { get; set; }
     }
 }

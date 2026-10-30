@@ -70,9 +70,10 @@ public class TreatmentPlanService(
         return await GetByIdAsync(treatmentPlan.Id);
     }
 
-    public async Task<Result<List<TreatmentPlanResponse>>> GetAllAsync()
+    public async Task<Result<List<TreatmentPlanResponse>>> GetAllAsync(int? patientId = null)
     {
         var treatmentPlans = await _context.TreatmentPlans
+            .Where(p => patientId == null || p.Assessment.PatientId == patientId)
             .Include(x => x.Doctor)
             .Include(x => x.Sessions)
             .AsNoTracking()

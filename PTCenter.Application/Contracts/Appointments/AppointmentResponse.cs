@@ -8,6 +8,9 @@ namespace PTCenter.Application.Contracts.Appointments
     public class AppointmentResponse
     {
         public int Id { get; set; }
+        public DateTime? ActualCheckIn { get; set; }
+        public DateTime? ActualCheckOut { get; set; }
+        public bool AssessmentCompleted { get; set; }
         public int PatientId { get; set; }
         public string PatientName { get; set; } = default!;
         public string? DoctorId { get; set; }

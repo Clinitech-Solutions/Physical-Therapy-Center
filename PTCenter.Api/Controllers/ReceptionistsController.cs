@@ -8,6 +8,7 @@ namespace PTCenter.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
+[Authorize(Roles = "Receptionist,Senior,Doctor,Ceo,Admin,Owner")]
 // [Authorize(Roles = "Receptionist,Admin")]
 public class ReceptionistController(IReceptionistService receptionistService) : ControllerBase
 {
