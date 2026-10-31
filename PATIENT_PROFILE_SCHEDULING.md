@@ -1,5 +1,11 @@
 # Patient Profile scheduling
 
+## Current activation status - 2026-10-31, 15:12 Cairo
+
+The user subsequently authorized applying the audit migration. Only `20261031122754_AppointmentScheduleAudit` was applied to the freshly rechecked `db56823.public.databaseasp.net` / `db56823` target. History/schema are verified and no migrations remain pending. The running local profile for patient 13, dashboard and invoice GETs now return **200** against SQL Server. Existing counts and financial sums are unchanged; no shared test records, scheduling writes, push or deployment. See the [application report](Database/ReviewedMigrations/20261031122754_AppointmentScheduleAudit.APPLIED.md). This supersedes the implementation-stage migration blocker below; SQL Server mutation/concurrency tests remain unperformed.
+
+## Implementation-stage record
+
 The shared frontend redesign and full evidence/contract report are in sibling [PATIENT_PROFILE.md](../physical-therapy-project-Admin-Panel/PATIENT_PROFILE.md).
 
 Narrow additions to BookingService/BookingsController provide patient-scoped course/session/payment/activity data, real availability with edited-appointment self-exclusion, an audited single-session save and original-operation reconciliation. The existing Booking schedule/overlap validator is shared; clinician working-hours, exclusive room/clinician reservations, clinical eligibility and financial rules remain authoritative.
