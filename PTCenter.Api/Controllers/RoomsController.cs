@@ -6,6 +6,7 @@ namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class RoomsController(IRoomService roomService) : ControllerBase
 {
     private readonly IRoomService _roomService = roomService;
@@ -43,6 +44,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpPost]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> Create(
         [FromBody] CreateRoomRequest request)
     {
@@ -56,6 +58,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> Update(
         int id,
         [FromBody] UpdateRoomRequest request)
@@ -75,6 +78,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpPatch("{id:int}/maintenance")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> UpdateMaintenance(
         int id,
         [FromBody] MaintenanceRequest request)
@@ -90,6 +94,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> Delete(int id)
     {
         var result = await _roomService.DeleteAsync(id);

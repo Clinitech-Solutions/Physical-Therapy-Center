@@ -8,7 +8,7 @@ namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]/[action]")]
-[Authorize(Roles = DefaultRoles.Admin.Name + "," + DefaultRoles.Owner.Name)]
+[Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class InsuranceCompaniesController(
     IInsuranceCompanyService insuranceCompanyService) : ControllerBase
 {
@@ -16,6 +16,7 @@ public class InsuranceCompaniesController(
 
 
     [HttpPost]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
     [ProducesResponseType(typeof(InsuranceCompanyResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Add(CreateInsuranceCompanyRequest request)
@@ -54,6 +55,7 @@ public class InsuranceCompaniesController(
 
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
     [ProducesResponseType(typeof(InsuranceCompanyResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -70,6 +72,7 @@ public class InsuranceCompaniesController(
 
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)

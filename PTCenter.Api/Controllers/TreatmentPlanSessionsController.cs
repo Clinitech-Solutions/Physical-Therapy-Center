@@ -9,7 +9,7 @@ namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]/[action]")]
-[Authorize]
+[Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class TreatmentPlanSessionsController(
     ITreatmentPlanSessionService treatmentPlanSessionService)
     : ControllerBase
@@ -18,6 +18,7 @@ public class TreatmentPlanSessionsController(
         treatmentPlanSessionService;
 
     [HttpPost]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.ClinicalWrite)]
     [ProducesResponseType(
         typeof(TreatmentPlanSessionResponse),
         StatusCodes.Status200OK)]
@@ -66,6 +67,7 @@ public class TreatmentPlanSessionsController(
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.ClinicalWrite)]
     [ProducesResponseType(
         typeof(TreatmentPlanSessionResponse),
         StatusCodes.Status200OK)]
@@ -85,6 +87,7 @@ public class TreatmentPlanSessionsController(
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.ClinicalWrite)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
