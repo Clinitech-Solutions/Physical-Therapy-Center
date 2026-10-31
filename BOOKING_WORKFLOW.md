@@ -1,5 +1,9 @@
 # Booking workflow
 
+## Doctor lifecycle and capacity update - 2026-10-31
+
+See [DOCTOR_WORKSPACE.md](DOCTOR_WORKSPACE.md) for the current clinical lifecycle and concurrency rules. Ordinary Doctor appointments permit up to two overlapping treatments in different rooms, using a whole-interval sweep shared by preview/bulk commit/reschedule/start and transaction serialization. Senior assessments stay exclusive. Arrival alone does not start treatment; Doctor End finalizes notes/progress once; Reception departure releases the room without completing again. Working-hours policy and ordinary patient payment gates remain intact. Internal Senior reassessment has no appointment or financial component. New migration 20261031164400_DoctorClinicalWorkspace is reviewed and **not applied**; older schema-status notes below are historical.
+
 ## Current finance status — 2026-10-31
 
 See [COURSE_FINANCE.md](COURSE_FINANCE.md) for the completed course-finance model, check-in gate, insurer ledger, safe legacy reuse and final verification. It supersedes the original batch-package financial policy and missing-insurer-UI notes retained below. **52 backend tests and 87 focused frontend tests pass**; the Angular wizard/collection/insurance flow also passed against the matching rebuilt local SQLite-backed ASP.NET test host. Working-hours policy is unchanged.
