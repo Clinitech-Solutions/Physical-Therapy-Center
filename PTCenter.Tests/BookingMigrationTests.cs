@@ -18,5 +18,11 @@ public class BookingMigrationTests
         Assert.Contains("IX_Payments_IdempotencyKey", sql);
         Assert.Contains("Review legacy SeniorId", sql);
         Assert.Contains("[CompletedAt]", sql);
+        var finance = db.GetService<IMigrator>().GenerateScript("20261029124607_BookingWorkflow", "20261030184822_CourseFinancialAgreements", MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Contains("CREATE TABLE [TreatmentCourseAgreements]",finance);
+        Assert.Contains("CREATE TABLE [InsuranceClaims]",finance);
+        Assert.Contains("ALTER COLUMN [AppointmentId] int NULL",finance);
+        Assert.DoesNotContain("DROP TABLE",finance);Assert.DoesNotContain("DROP COLUMN",finance);
+        Assert.DoesNotContain("DELETE FROM",finance);Assert.DoesNotContain("UPDATE [",finance);Assert.DoesNotContain("TRUNCATE",finance);
     }
 }

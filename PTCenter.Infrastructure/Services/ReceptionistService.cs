@@ -125,6 +125,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
     {
         try { await bookings.TransitionAsync(appointmentId, newStatus); return Result.Success(); }
         catch (BookingRuleException e) { return Result.Failure(new(e.Code, e.Message, e.Status)); }
+        catch (Microsoft.Data.SqlClient.SqlException e) when (e.Number is 1205 or 1222) { return Result.Failure(new("Booking.ConcurrentChange", "The session changed concurrently. Refresh before starting again.", 409)); }
     }
 
     public Task<Result> CancelAppointmentAsAbsentAsync(int appointmentId) => UpdateAppointmentStatusAsync(appointmentId, AppointmentStatus.Cancelled);

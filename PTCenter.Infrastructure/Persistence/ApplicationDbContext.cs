@@ -28,6 +28,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<Appointment> Appointments { get; set; }
     public DbSet<BookingBatch> BookingBatches { get; set; }
+    public DbSet<TreatmentCourseAgreement> TreatmentCourseAgreements { get; set; }
+    public DbSet<InsuranceClaim> InsuranceClaims { get; set; }
 
     public DbSet<SessionNote> SessionNotes { get; set; }
 

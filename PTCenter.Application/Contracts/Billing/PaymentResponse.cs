@@ -11,6 +11,9 @@ namespace PTCenter.Application.Contracts.Billing
         public string? IdempotencyKey { get; set; }
 
         public int InvoiceId { get; set; }
+        public int? InsuranceClaimId { get; set; }
+        public string? PayerType { get; set; }
+        public string? CollectionMethod { get; set; }
 
         public decimal Amount { get; set; }
 

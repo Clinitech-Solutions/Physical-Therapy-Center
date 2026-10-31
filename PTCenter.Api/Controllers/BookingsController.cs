@@ -18,6 +18,7 @@ public class BookingsController(BookingService service) : ControllerBase
         try { return Ok(await action()); }
         catch (BookingRuleException error) { return Problem(statusCode: error.Status, title: error.Code, detail: error.Message); }
         catch (DbUpdateException) { return Problem(statusCode: 409, title: "Booking.ConcurrentChange", detail: "Booking data changed. Reconcile the retry key before trying again."); }
+        catch (Microsoft.Data.SqlClient.SqlException error) when (error.Number is 1205 or 1222) { return Problem(statusCode: 409, title: "Booking.ConcurrentChange", detail: "Booking data changed concurrently. Reconcile the same operation key before retrying."); }
     }
     [HttpGet("patients")]
     public Task<IActionResult> Directory([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 100) => Execute(() => service.DirectoryAsync(pageNumber, pageSize));

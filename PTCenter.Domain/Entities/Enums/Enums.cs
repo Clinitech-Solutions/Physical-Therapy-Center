@@ -66,6 +66,7 @@ namespace PTCenter.Domain.Entities.Enums
         Visa,
         EWallet,
         BankTransfer,
-        Insurance
+        Insurance,
+        Online
     }
 }

@@ -109,11 +109,17 @@ public class BookingHttpTests
         var appointmentJson = directory.GetProperty("items")[0];
         Assert.EndsWith("Z", appointmentJson.GetProperty("startTime").GetString());
         Assert.Equal("Pending", appointmentJson.GetProperty("status").GetString());
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PutAsJsonAsync($"/api/Bookings/appointments/{receipt.Appointments[0].Id}/status", 4)).StatusCode);
+        var gate = await client.GetFromJsonAsync<PaymentGate>($"/api/Finance/appointments/{receipt.Appointments[0].Id}/payment-gate");
+        Assert.Equal(100, gate!.AdditionalPaymentRequired);
+        var collection = new CollectBookingPaymentRequest(Guid.NewGuid().ToString(),100,PaymentMethod.Cash);
+        var payments = await Task.WhenAll(client.PostAsJsonAsync($"/api/Finance/appointments/{gate.AppointmentId}/payments",collection),client.PostAsJsonAsync($"/api/Finance/appointments/{gate.AppointmentId}/payments",collection));
+        Assert.All(payments, p => Assert.Equal(HttpStatusCode.OK,p.StatusCode));
         Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync($"/api/Bookings/appointments/{receipt.Appointments[0].Id}/status", 4)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync($"/api/Bookings/appointments/{receipt.Appointments[0].Id}/status", 1)).StatusCode);
         var released = await client.PostAsJsonAsync("/api/Rooms/availability", new { request.StartsAt });
         Assert.Single((await released.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).EnumerateArray());
         using var verify = host.Services.CreateScope();var savedDb=verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Equal(1,await savedDb.Appointments.CountAsync()); Assert.Equal(1,await savedDb.Invoices.CountAsync()); Assert.Equal(0,await savedDb.Payments.CountAsync());
+        Assert.Equal(1,await savedDb.Appointments.CountAsync()); Assert.Equal(1,await savedDb.Invoices.CountAsync()); Assert.Equal(1,await savedDb.Payments.CountAsync());
     }
 }

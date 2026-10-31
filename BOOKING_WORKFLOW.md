@@ -1,5 +1,13 @@
 # Booking workflow
 
+## Current finance status — 2026-10-31
+
+See [COURSE_FINANCE.md](COURSE_FINANCE.md) for the completed course-finance model, check-in gate, insurer ledger, safe legacy reuse and final verification. It supersedes the original batch-package financial policy and missing-insurer-UI notes retained below. **52 backend tests and 87 focused frontend tests pass**; the Angular wizard/collection/insurance flow also passed against the matching rebuilt local SQLite-backed ASP.NET test host. Working-hours policy is unchanged.
+
+Read-only SQL Server recheck: `db56823.public.databaseasp.net / db56823` (`S13`), latest applied `20261029124607_BookingWorkflow`; sole pending `20261030184822_CourseFinancialAgreements`. The new migration is reviewed but **unapplied**. SQL Server runtime migration/populated finance/concurrency checks remain separate from SQLite/browser evidence and require explicit authorization for the new migration. The main API was not restarted; no push/deploy occurred.
+
+The older policy, prerequisite and test-count statements below are retained as implementation history. In particular, the earlier applied-migration note's “none pending” describes the state before the new course-finance migration was introduced.
+
 ## Room availability and checkout
 
 `POST /api/Rooms/availability` is an authenticated staff read that accepts 1–200 `startsAt` values and returns active rooms free for every selected 60-minute interval. Overlapping Pending/InProgress reservations exclude the room. An InProgress appointment without ActualCheckOut continues to occupy its room even after its planned end; checkout releases that occupancy. Completed/cancelled/no-show appointments do not hold a reservation, and checkout never reactivates a maintenance room.

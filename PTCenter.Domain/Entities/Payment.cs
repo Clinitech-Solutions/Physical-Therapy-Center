@@ -15,6 +15,9 @@ public class Payment : BaseEntity
 
     public string? TransactionId { get; set; }
     public string? IdempotencyKey { get; set; }
+    public string? PayerType { get; set; }
+    public string? CollectionMethod { get; set; }
+    public int? InsuranceClaimId { get; set; }
 
     public DateTime PaymentDate { get; set; } = DateTime.UtcNow;
 

@@ -15,6 +15,8 @@ public class BookingRequest
     public decimal? UnitPrice { get; set; }
     public decimal? PackagePrice { get; set; }
     public decimal Discount { get; set; }
+    public string DiscountType { get; set; } = "None";
+    public decimal DiscountValue { get; set; }
     public decimal Deposit { get; set; }
     public PaymentMethod? PaymentMethod { get; set; }
     public List<InstallmentRequest> Installments { get; set; } = [];
@@ -27,15 +29,23 @@ public record BookingAccount(string Key, int PatientId, string PatientName, stri
 public record BookingAssessment(int Id, DateTime AssessmentDate, DateTime? CompletedAt, string Diagnosis);
 public record BookingPatientOption(int Id, string FullName, string PhoneNumber, string Gender);
 public record BookingPlan(int Id, string DoctorId, string DoctorName, string TreatmentType,
-    int PlannedSessions, int BookedSessions, int CompletedSessions, int RemainingSessions);
+    int PlannedSessions, int BookedSessions, int CompletedSessions, int RemainingSessions)
+{
+    public CourseFinancialSummary? Financial { get; set; }
+}
 public record BookingContext(int PatientId, string PatientName, string Gender, string? PaymentType,
     bool HasCompletedAssessment, bool IsInsurance, bool InsuranceApproved, int? RemainingApprovedSessions,
-    decimal? CopayPercentage, string? InsuranceCompanyName, List<BookingAssessment> Assessments, List<BookingPlan> Plans);
+    decimal? CopayPercentage, string? InsuranceCompanyName, List<BookingAssessment> Assessments, List<BookingPlan> Plans)
+{
+    public int? ApprovedSessions { get; init; }
+}
 public record BookingClinician(string Id, string Name, string Gender, string Role, bool Preferred, int CurrentLoad);
 public record BookingSlot(DateTimeOffset StartTime, DateTimeOffset EndTime, List<string> Conflicts);
 public record BookingPreview(List<BookingSlot> Appointments, List<string> Errors, decimal TotalAmount,
     decimal PatientAmount, decimal InsuranceAmount, decimal Deposit, decimal RemainingAmount, string? WaiverReason)
 {
+    public CourseFinancialSummary? Financial { get; init; }
+    public decimal DiscountAmount { get; init; }
     public bool CanSave => Errors.Count == 0 && Appointments.Count > 0 && Appointments.All(x => x.Conflicts.Count == 0);
 }
 public record BookedAppointment(int Id, int? TreatmentPlanSessionId, DateTimeOffset StartTime, DateTimeOffset EndTime);
