@@ -24,5 +24,8 @@ public class BookingMigrationTests
         Assert.Contains("ALTER COLUMN [AppointmentId] int NULL",finance);
         Assert.DoesNotContain("DROP TABLE",finance);Assert.DoesNotContain("DROP COLUMN",finance);
         Assert.DoesNotContain("DELETE FROM",finance);Assert.DoesNotContain("UPDATE [",finance);Assert.DoesNotContain("TRUNCATE",finance);
+        var audit=db.GetService<IMigrator>().GenerateScript("20261030184822_CourseFinancialAgreements","20261031122754_AppointmentScheduleAudit",MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Contains("CREATE TABLE [AppointmentScheduleChanges]",audit);Assert.Contains("CREATE UNIQUE INDEX [IX_AppointmentScheduleChanges_OperationKey]",audit);
+        Assert.DoesNotContain("DROP TABLE",audit);Assert.DoesNotContain("DROP COLUMN",audit);Assert.DoesNotContain("DELETE FROM",audit);Assert.DoesNotContain("UPDATE [",audit);Assert.DoesNotContain("ALTER COLUMN",audit);
     }
 }

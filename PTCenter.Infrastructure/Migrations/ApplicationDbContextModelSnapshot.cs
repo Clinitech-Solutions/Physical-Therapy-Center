@@ -452,6 +452,7 @@ namespace PTCenter.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("datetime2");
 
                     b.Property<string>("UpdatedBy")
@@ -474,6 +475,95 @@ namespace PTCenter.Infrastructure.Migrations
                     b.HasIndex("SeniorId", "StartTime");
 
                     b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("PTCenter.Domain.Entities.AppointmentScheduleChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("AppointmentId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ClinicianId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("NewEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NewRoomId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewRoomName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("NewStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OperationKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("PatientId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("PreviousEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("PreviousRoomId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PreviousRoomName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("PreviousStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("TreatmentPlanId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId");
+
+                    b.HasIndex("OperationKey")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId", "TreatmentPlanId", "ChangedAt");
+
+                    b.ToTable("AppointmentScheduleChanges");
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.BookingBatch", b =>
@@ -1647,6 +1737,21 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Navigation("Room");
 
                     b.Navigation("TreatmentPlanSession");
+                });
+
+            modelBuilder.Entity("PTCenter.Domain.Entities.AppointmentScheduleChange", b =>
+                {
+                    b.HasOne("PTCenter.Domain.Entities.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PTCenter.Domain.Entities.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PTCenter.Domain.Entities.BookingBatch", b =>

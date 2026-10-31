@@ -27,6 +27,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<TreatmentPlanSession> TreatmentPlanSessions { get; set; }
 
     public DbSet<Appointment> Appointments { get; set; }
+    public DbSet<AppointmentScheduleChange> AppointmentScheduleChanges { get; set; }
     public DbSet<BookingBatch> BookingBatches { get; set; }
     public DbSet<TreatmentCourseAgreement> TreatmentCourseAgreements { get; set; }
     public DbSet<InsuranceClaim> InsuranceClaims { get; set; }

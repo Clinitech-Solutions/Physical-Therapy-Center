@@ -131,20 +131,14 @@ public partial class BookingService(ApplicationDbContext db)
             var local = TimeZoneInfo.ConvertTime(start, ClinicTimeZone);
             var localEnd = TimeZoneInfo.ConvertTime(end, ClinicTimeZone);
             var conflicts = new List<string>();
-            if (start <= DateTimeOffset.UtcNow) conflicts.Add("TimeInPast");
+            conflicts.AddRange(WorkingTimeConflicts(start, schedules, absences));
             if (request.StartsAt.Count(s => s < end && s.AddMinutes(60) > start) > 1) conflicts.Add("DuplicateSlot");
-            if (schedules.Count == 0) conflicts.Add("WorkingHoursNotConfigured");
-            else if (!schedules.Any(s => s.DayOfWeek == (int)local.DayOfWeek && s.StartTime <= TimeOnly.FromDateTime(local.DateTime) &&
-                s.EndTime >= TimeOnly.FromDateTime(localEnd.DateTime) && local.Date == localEnd.Date)) conflicts.Add("OutsideWorkingHours");
-            if (absences.Any(a => a.AbsentDate == DateOnly.FromDateTime(local.DateTime))) conflicts.Add("ClinicianAbsent");
             var utc = start.UtcDateTime; var utcEnd = end.UtcDateTime;
             var overlaps = await db.Appointments.AsNoTracking().Where(a => a.Id != excludeAppointment &&
                 a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow && a.Status != AppointmentStatus.Completed &&
-                (a.StartTime < utcEnd && a.EndTime > utc || a.RoomId == request.RoomId && a.Status == AppointmentStatus.InProgress && a.ActualCheckOut == null) &&
+                (a.StartTime < utcEnd && a.EndTime > utc || a.Status == AppointmentStatus.InProgress && a.ActualCheckOut == null) &&
                 (a.PatientId == request.PatientId || a.RoomId == request.RoomId || a.DoctorId == request.ClinicianId || a.SeniorId == request.ClinicianId)).ToListAsync();
-            if (overlaps.Any(a => a.PatientId == request.PatientId)) conflicts.Add("PatientConflict");
-            if (overlaps.Any(a => a.RoomId == request.RoomId)) conflicts.Add("RoomConflict");
-            if (overlaps.Any(a => a.DoctorId == request.ClinicianId || a.SeniorId == request.ClinicianId)) conflicts.Add("ClinicianConflict");
+            conflicts.AddRange(IntervalConflicts(start, request.PatientId, request.ClinicianId, request.RoomId, overlaps));
             slots.Add(new(start.ToUniversalTime(), end.ToUniversalTime(), conflicts));
         }
         if (treatment && plan != null && checkFinancial)
@@ -282,7 +276,7 @@ public partial class BookingService(ApplicationDbContext db)
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         var appointment = await db.Appointments.Include(a => a.TreatmentPlanSession).SingleOrDefaultAsync(a => a.Id == id)
             ?? throw Rule("AppointmentNotFound", "Appointment was not found.", 404);
-        if (appointment.ActualCheckIn != null || appointment.Status == AppointmentStatus.Completed) throw Rule("AlreadyStarted", "An appointment that has started cannot be rescheduled.", 409);
+        RequireUpcoming(appointment);
         var originallyInsured = appointment.InsuranceFunded || await db.Invoices.AnyAsync(i => i.AppointmentId == id && i.InsuranceAmount > 0);
         var preview = await PreviewCoreAsync(new BookingRequest { PatientId = appointment.PatientId, ClinicianId = request.ClinicianId,
             RoomId = request.RoomId, StartsAt = [request.StartTime], TreatmentPlanId = appointment.TreatmentPlanSession?.TreatmentPlanId }, id, false, originallyInsured);
@@ -292,7 +286,7 @@ public partial class BookingService(ApplicationDbContext db)
         appointment.StartTime = request.StartTime.UtcDateTime; appointment.EndTime = appointment.StartTime.AddMinutes(60);
         appointment.DoctorId = appointment.AppointmentType == "Session" ? request.ClinicianId : null;
         appointment.SeniorId = appointment.AppointmentType == "Assessment" ? request.ClinicianId : null;
-        appointment.RoomId = request.RoomId; appointment.Status = AppointmentStatus.Pending;
+        appointment.RoomId = request.RoomId;
         if (appointment.TreatmentPlanSession != null) appointment.TreatmentPlanSession.SessionDate = appointment.StartTime;
         await db.SaveChangesAsync(); await transaction.CommitAsync();
     }
