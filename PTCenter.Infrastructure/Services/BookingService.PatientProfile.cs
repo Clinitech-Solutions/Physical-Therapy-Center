@@ -9,13 +9,13 @@ namespace PTCenter.Infrastructure.Services;
 public partial class BookingService
 {
     private static string ScheduleVersion(Appointment a) => Hash(new { a.Id,Start=a.StartTime.Ticks,End=a.EndTime.Ticks,a.RoomId,a.DoctorId,a.SeniorId,a.Status,CheckIn=a.ActualCheckIn?.Ticks,CheckOut=a.ActualCheckOut?.Ticks,Updated=a.UpdatedAt?.Ticks });
-    private static bool CanReschedule(Appointment a) => a.Status == AppointmentStatus.Pending && a.ActualCheckIn == null && a.ActualCheckOut == null && a.StartTime > DateTime.UtcNow &&
+    private static bool CanReschedule(Appointment a) => a.Status == AppointmentStatus.Pending && a.ActualCheckIn == null && a.ActualCheckOut == null && a.TreatmentStartedAt == null && a.TreatmentEndedAt == null && a.StartTime > DateTime.UtcNow &&
         (a.TreatmentPlanSession == null || a.TreatmentPlanSession.CheckIn == null && a.TreatmentPlanSession.CheckOut == null && a.TreatmentPlanSession.Status == SessionStatus.Pending);
     private static void RequireUpcoming(Appointment a) {
         if(!CanReschedule(a))throw Rule("NotUpcoming","Only upcoming, unstarted pending appointments can be rescheduled. Completed, cancelled, no-show and started records stay unchanged.",409);
     }
-    private static List<string> IntervalConflicts(DateTimeOffset start,int patientId,string clinicianId,int roomId,IEnumerable<Appointment> candidates,bool doctorTreatment=true)
-        => ClinicalCapacity.Conflicts(start.UtcDateTime,start.UtcDateTime.AddMinutes(60),patientId,clinicianId,roomId,candidates,doctorTreatment);
+    private static List<string> IntervalConflicts(DateTimeOffset start,int patientId,string clinicianId,int roomId,IEnumerable<Appointment> candidates,bool doctorTreatment=true,int roomCapacity=1)
+        => ClinicalCapacity.Conflicts(start.UtcDateTime,start.UtcDateTime.AddMinutes(60),patientId,clinicianId,roomId,candidates,doctorTreatment,roomCapacity);
     private static List<string> WorkingTimeConflicts(DateTimeOffset start,IEnumerable<DoctorSchedule> schedules,IEnumerable<DoctorAbsence> absences)
     {
         var local=TimeZoneInfo.ConvertTime(start,ClinicTimeZone);var end=TimeZoneInfo.ConvertTime(start.AddMinutes(60),ClinicTimeZone);var conflicts=new List<string>();
@@ -106,7 +106,7 @@ public partial class BookingService
             if(ClinicTimeZone.IsInvalidTime(local)||ClinicTimeZone.IsAmbiguousTime(local))continue;
             var start=new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local,ClinicTimeZone));
             if(WorkingTimeConflicts(start,hours,absences).Count>0)continue;
-            foreach(var room in rooms)if(IntervalConflicts(start,appointment.PatientId,clinician,room.Id,candidates,appointment.AppointmentType == "Session").Count==0)slots.Add(new(start.UtcDateTime,start.UtcDateTime.AddMinutes(60),room.Id,room.Name,room.Capacity));
+            foreach(var room in rooms)if(IntervalConflicts(start,appointment.PatientId,clinician,room.Id,candidates,appointment.AppointmentType == "Session",room.Capacity).Count==0)slots.Add(new(start.UtcDateTime,start.UtcDateTime.AddMinutes(60),room.Id,room.Name,room.Capacity));
         }
         return new(id,ScheduleVersion(appointment),appointment.StartTime,appointment.EndTime,appointment.RoomId,clinician,doctor.Name,date,slots,notices);
     }

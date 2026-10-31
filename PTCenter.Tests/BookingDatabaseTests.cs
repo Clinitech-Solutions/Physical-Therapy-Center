@@ -52,7 +52,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         db.TreatmentPlans.Add(plan);await db.SaveChangesAsync();return plan.Id;
     }
     private BookingRequest Treatment(int plan, int count=2)=>new(){IdempotencyKey=Guid.NewGuid().ToString(),PatientId=patientId,ClinicianId="doctor",RoomId=1,TreatmentPlanId=plan,
-        StartsAt=Enumerable.Range(0,count).Select(i=>start.AddDays(i)).ToList(),UnitPrice=100};
+        StartsAt=Enumerable.Range(0,count).Select(i=>start.AddDays((i/2)*7+i%2)).ToList(),UnitPrice=100};
 
     [Fact] public async Task Context_requires_explicit_completion_not_severity_or_empty_cache()
     {
@@ -250,7 +250,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
     }
 
-    [Fact] public async Task An_occupied_room_stays_unavailable_past_planned_end_and_checkout_releases_it_immediately()
+    [Fact] public async Task Live_occupied_room_does_not_reserve_future_planned_slots_indefinitely()
     {
         var rooms = new RoomService(db);
         var receipt = await service.CreateAsync(Assessment());
@@ -259,8 +259,8 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         appointment!.StartTime = DateTime.UtcNow.AddHours(-3); appointment.EndTime = DateTime.UtcNow.AddHours(-2);
         await db.SaveChangesAsync();
         Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Occupied, (await rooms.GetByIdAsync(1)).Value.Status);
-        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
-        Assert.Contains("RoomConflict", (await service.PreviewAsync(Assessment())).Appointments[0].Conflicts);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.DoesNotContain("RoomConflict", (await service.PreviewAsync(Assessment())).Appointments[0].Conflicts);
         await service.TransitionAsync(appointment.Id, AppointmentStatus.Completed);
         Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Available, (await rooms.GetByIdAsync(1)).Value.Status);
         Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);

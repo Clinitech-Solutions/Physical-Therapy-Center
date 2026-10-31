@@ -1,5 +1,9 @@
 # Booking workflow
 
+## Current reception acceptance fixes - 2026-10-31
+
+See [RECEPTION_ACCEPTANCE_FIXES.md](RECEPTION_ACCEPTANCE_FIXES.md). This supersedes older exclusive-room and indefinite-future occupancy notes: planned windows use saved room capacity and half-open Doctor interval limits, actual Start additionally rechecks live overdue treatments/room places, and the same Doctor still requires different rooms. Booking respects saved allocation/approval capacity and Senior FrequencyPerWeek in a Saturday-Friday Cairo clinic week. No historical prescriptions or financial agreements were backfilled. CEO/Admin/Owner now own insurer accounts/claims/settlements; Reception keeps patient-share collections. Configured schema/model match with no pending migrations and no new migration required; restarted local API reads/permissions are verified.
+
 ## Authorized Doctor migration applied - 2026-10-31
 
 Only `20261031164400_DoctorClinicalWorkspace` was applied to freshly confirmed `db56823.public.databaseasp.net / db56823` after exact forward-SQL review. History and clinical schema are verified with zero pending migrations; existing record counts and financial totals are unchanged. Current-source clinical/profile/dashboard/invoice service reads pass against SQL Server. See [application report](Database/ReviewedMigrations/20261031164400_DoctorClinicalWorkspace.APPLIED.md). This supersedes the pending-migration notes below. No shared test records, application restart, push or deployment.

@@ -24,7 +24,8 @@ public partial class BookingService
         if (absences.Any(a => a.AbsentDate == DateOnly.FromDateTime(local))) conflicts.Add("ClinicianAbsent");
         if (!await db.Rooms.AnyAsync(r => r.Id == appointment.RoomId && r.IsActive && r.Capacity > 0)) conflicts.Add("RoomRequired");
         var others = await db.Appointments.AsNoTracking().Where(a => a.Id != appointment.Id && a.Status != PTCenter.Domain.Entities.Enums.AppointmentStatus.Completed && a.Status != PTCenter.Domain.Entities.Enums.AppointmentStatus.Cancelled && a.Status != PTCenter.Domain.Entities.Enums.AppointmentStatus.NoShow).ToListAsync();
-        conflicts.AddRange(ClinicalCapacity.Conflicts(now, now.AddMinutes(60), appointment.PatientId, appointment.DoctorId!, appointment.RoomId ?? 0, others, true));
+        var capacity = await db.Rooms.Where(r => r.Id == appointment.RoomId && r.IsActive).Select(r => r.Capacity).SingleOrDefaultAsync();
+        conflicts.AddRange(ClinicalCapacity.Conflicts(now, now.AddMinutes(60), appointment.PatientId, appointment.DoctorId!, appointment.RoomId ?? 0, others, true, capacity, actual:true));
         if (conflicts.Count > 0) throw new ClinicalRuleException("Doctor.CapacityOrEligibility", "Treatment cannot start. Review the reported room, clinician or schedule conflict.", 409, new { conflicts = conflicts.Distinct().ToList() });
     }
 }

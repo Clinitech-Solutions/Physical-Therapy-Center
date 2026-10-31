@@ -33,8 +33,9 @@ public partial class BookingService(ApplicationDbContext db)
     public async Task<PTCenter.Application.Contracts.Common.PagedResponse<BookingPatientOption>> DirectoryAsync(int pageNumber = 1, int pageSize = 100)
     {
         if (pageNumber < 1 || pageSize is < 1 or > 100) throw Rule("DirectoryPage", "Invalid directory page.");
-        var total = await db.Patients.CountAsync();
-        var items = await db.Patients.AsNoTracking().OrderBy(p => p.Id).Skip((pageNumber - 1) * pageSize).Take(pageSize)
+        var directory = BookablePatients().AsNoTracking();
+        var total = await directory.CountAsync();
+        var items = await directory.OrderBy(p => p.ApplicationUser.FullName).ThenBy(p=>p.Id).Skip((pageNumber - 1) * pageSize).Take(pageSize)
             .Select(p => new BookingPatientOption(p.Id, p.ApplicationUser.FullName, p.ApplicationUser.PhoneNumber ?? "", p.ApplicationUser.Gender.ToString())).ToListAsync();
         return new() { Items = items, PageNumber = pageNumber, PageSize = pageSize, TotalCount = total, TotalPages = (int)Math.Ceiling(total / (double)pageSize) };
     }
@@ -52,7 +53,7 @@ public partial class BookingService(ApplicationDbContext db)
         var appointments = await db.Appointments.AsNoTracking().Where(a => a.TreatmentPlanSessionId != null && sessionIds.Contains(a.TreatmentPlanSessionId.Value)).ToListAsync();
         var funded = await db.Appointments.CountAsync(a => a.PatientId == patientId && a.AppointmentType == "Session" &&
             (a.InsuranceFunded || a.BookingBatchId == null && patient.PaymentType == "Insurance") &&
-            a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow);
+            (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow));
         var info = patient.InsuranceDetails;
         var result = new BookingContext(patientId, patient.ApplicationUser.FullName, patient.ApplicationUser.Gender.ToString(), patient.PaymentType,
             assessments.Any(a => a.CompletedAt != null), Insured(patient), info?.Status == InsuranceStatus.Approved && patient.InsuranceCompanyId != null,
@@ -65,11 +66,16 @@ public partial class BookingService(ApplicationDbContext db)
                     used.Count(a => a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow),
                     sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed),
                     Math.Max(0, p.NumberOfSessions - used.Select(a => a.TreatmentPlanSessionId).Distinct().Count() -
-                        sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed && !used.Any(a => a.TreatmentPlanSessionId == s.Id))));
+                        sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed && !used.Any(a => a.TreatmentPlanSessionId == s.Id))))
+                { FrequencyPerWeek = p.FrequencyPerWeek is >=1 and <=7 ? p.FrequencyPerWeek : null,
+                  BookedStartsAt = used.Where(a=>a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow).Select(a=>a.StartTime).ToList() };
             }).ToList()) { ApprovedSessions = info?.ApprovedSessions };
         var finance = new CourseFinanceService(db);
         var reviews = await db.ReassessmentRequests.AsNoTracking().Where(r => r.PatientId == patientId && r.ReviewRequired).Select(r => new {r.TreatmentPlanId,r.RevisedPlanId}).ToListAsync();
-        foreach (var plan in result.Plans) { plan.Financial = await finance.SummaryAsync(plan.Id); plan.StaffReviewRequired = reviews.Any(r => r.TreatmentPlanId == plan.Id || r.RevisedPlanId == plan.Id); }
+        for(var index=0;index<result.Plans.Count;index++) {
+            var plan=result.Plans[index];plan.Financial = await finance.SummaryAsync(plan.Id); plan.StaffReviewRequired = reviews.Any(r => r.TreatmentPlanId == plan.Id || r.RevisedPlanId == plan.Id);
+            if(plan.Financial!=null)result.Plans[index]=plan with{RemainingSessions=Math.Min(plan.RemainingSessions,(await finance.AvailableNumbersAsync(plan.Id,plan.Financial.CoveredSessions)).Count)};
+        }
         return result;
     }
 
@@ -123,16 +129,21 @@ public partial class BookingService(ApplicationDbContext db)
         }
         var clinicians = await CliniciansForAsync(patient, treatment ? "Doctor" : "Senior");
         if (!clinicians.Any(c => c.Id == request.ClinicianId)) errors.Add("ClinicianEligibility");
-        if (!await db.Rooms.AnyAsync(r => r.Id == request.RoomId && r.IsActive && r.Capacity > 0)) errors.Add("RoomRequired");
+        var roomCapacity = await db.Rooms.Where(r => r.Id == request.RoomId && r.IsActive).Select(r => r.Capacity).SingleOrDefaultAsync();
+        if (roomCapacity <= 0) errors.Add("RoomRequired");
         var schedules = await db.DoctorSchedules.AsNoTracking().Where(s => s.DoctorId == request.ClinicianId).ToListAsync();
         var absences = await db.DoctorAbsences.AsNoTracking().Where(a => a.DoctorId == request.ClinicianId).ToListAsync();
         var slots = new List<BookingSlot>();
+        var weekly = plan == null ? new Dictionary<DateOnly,int>() : await WeeklyCountsAsync(plan.Id,excludeAppointment);
+        if(treatment && plan?.FrequencyPerWeek == null) errors.Add("FrequencyRequired");
         foreach (var start in request.StartsAt)
         {
             var end = start.AddMinutes(60);
             var local = TimeZoneInfo.ConvertTime(start, ClinicTimeZone);
             var localEnd = TimeZoneInfo.ConvertTime(end, ClinicTimeZone);
             var conflicts = new List<string>();
+            if(plan?.FrequencyPerWeek is int frequency && weekly.GetValueOrDefault(ClinicCalendar.Week(start)) + request.StartsAt.Count(s=>ClinicCalendar.Week(s)==ClinicCalendar.Week(start)) > frequency)
+                conflicts.Add("WeeklyFrequencyLimit");
             conflicts.AddRange(WorkingTimeConflicts(start, schedules, absences));
             if (request.StartsAt.Count(s => s < end && s.AddMinutes(60) > start) > 1) conflicts.Add("DuplicateSlot");
             var utc = start.UtcDateTime; var utcEnd = end.UtcDateTime;
@@ -140,7 +151,7 @@ public partial class BookingService(ApplicationDbContext db)
                 a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow && a.Status != AppointmentStatus.Completed &&
                 (a.StartTime < utcEnd && a.EndTime > utc || a.Status == AppointmentStatus.InProgress && a.ActualCheckOut == null) &&
                 (a.PatientId == request.PatientId || a.RoomId == request.RoomId || a.DoctorId == request.ClinicianId || a.SeniorId == request.ClinicianId)).ToListAsync();
-            conflicts.AddRange(IntervalConflicts(start, request.PatientId, request.ClinicianId, request.RoomId, overlaps, treatment));
+            conflicts.AddRange(IntervalConflicts(start, request.PatientId, request.ClinicianId, request.RoomId, overlaps, treatment, roomCapacity));
             slots.Add(new(start.ToUniversalTime(), end.ToUniversalTime(), conflicts));
         }
         if (treatment && plan != null && checkFinancial)
@@ -268,8 +279,7 @@ public partial class BookingService(ApplicationDbContext db)
         var ids = appointments.Select(a => a.Id).ToList();
         var invoices = await db.Invoices.AsNoTracking().Include(i => i.Payments).Where(i => i.AppointmentId != null && ids.Contains(i.AppointmentId.Value)).ToListAsync();
         var paid = invoices.Sum(i => i.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount));
-        return new(key, batch.PatientId, "Committed", appointments.Select(a => new BookedAppointment(a.Id, a.TreatmentPlanSessionId,
-            new DateTimeOffset(DateTime.SpecifyKind(a.StartTime, DateTimeKind.Utc)), new DateTimeOffset(DateTime.SpecifyKind(a.EndTime, DateTimeKind.Utc)))).ToList(),
+        return new(key, batch.PatientId, "Committed", await CompleteRowsAsync(appointments),
             invoices.Select(i => i.Id).ToList(), batch.TotalAmount, batch.PatientAmount, batch.InsuranceAmount, paid, Math.Max(0, batch.PatientAmount - paid),
             batch.WaiverReason, JsonSerializer.Deserialize<List<InstallmentRequest>>(batch.InstallmentsJson) ?? []);
     }
@@ -392,9 +402,12 @@ public partial class BookingService(ApplicationDbContext db)
             if (appointment.InsuranceFunded && !(await ContextAsync(appointment.PatientId)).InsuranceApproved)
                 throw Rule("InsuranceApprovalRequired", "Insurance-funded treatment requires current verified approval.", 409);
             if (await db.Appointments.AnyAsync(a => a.Id != id && a.ActualCheckIn != null && a.ActualCheckOut == null &&
-                (a.PatientId == appointment.PatientId || appointment.RoomId != null && a.RoomId == appointment.RoomId ||
+                (a.PatientId == appointment.PatientId ||
                 appointment.SeniorId != null && (a.DoctorId == appointment.SeniorId || a.SeniorId == appointment.SeniorId))))
                 throw Rule("ActualOccupancy", "The patient or room is still occupied. Record departure before reusing the room.", 409);
+            var roomCapacity = await db.Rooms.Where(r=>r.Id==appointment.RoomId && r.IsActive).Select(r=>r.Capacity).SingleOrDefaultAsync();
+            var roomLoad = await db.Appointments.CountAsync(a=>a.Id!=id && a.RoomId==appointment.RoomId && a.ActualCheckIn!=null && a.ActualCheckOut==null);
+            if(roomCapacity<=roomLoad) throw Rule("ActualOccupancy","The room has no remaining places. Record departure or choose another room before arrival.",409);
             appointment.ActualCheckIn = DateTime.UtcNow;
             if (appointment.TreatmentPlanSession != null) { appointment.TreatmentPlanSession.CheckIn = appointment.ActualCheckIn; appointment.TreatmentPlanSession.Status = SessionStatus.Pending; }
         }
