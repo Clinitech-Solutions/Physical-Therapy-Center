@@ -11,7 +11,10 @@ namespace PTCenter.Application.Contracts.Billing
 
         public string InvoiceNumber { get; set; } = null!;
 
-        public int AppointmentId { get; set; }
+        public int? AppointmentId { get; set; }
+        public int? CourseAgreementId { get; set; }
+        public int? TreatmentPlanSessionId { get; set; }
+        public DateTime? DeliveredAt { get; set; }
 
         public int PatientId { get; set; }
 
@@ -35,7 +38,7 @@ namespace PTCenter.Application.Contracts.Billing
 
         public InvoiceStatus Status { get; set; }
 
-        public DateTime AppointmentDate { get; set; }
+        public DateTime? AppointmentDate { get; set; }
 
         public DateTime CreatedAt { get; set; }
 

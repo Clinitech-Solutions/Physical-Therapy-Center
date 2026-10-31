@@ -10,6 +10,8 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
     public void Configure(EntityTypeBuilder<Payment> b)
     {
         b.HasKey(x => x.Id);
+        b.Property(x => x.PayerType).HasMaxLength(20); b.Property(x => x.CollectionMethod).HasMaxLength(30);
+        b.HasOne<InsuranceClaim>().WithMany().HasForeignKey(x => x.InsuranceClaimId).OnDelete(DeleteBehavior.Restrict);
         b.Property(x => x.IdempotencyKey).HasMaxLength(120);
         b.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
 

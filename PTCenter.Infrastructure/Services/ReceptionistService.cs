@@ -8,16 +8,16 @@ using PTCenter.Infrastructure.Persistence;
 
 namespace PTCenter.Infrastructure.Services;
 
-public class ReceptionistService(ApplicationDbContext context, BookingService bookings) : IReceptionistService
+public class ReceptionistService(ApplicationDbContext context, BookingService bookings, TimeProvider? clock = null) : IReceptionistService
 {
     private readonly ApplicationDbContext _context = context;
 
     public async Task<Result<ReceptionistDashboardStatsResponse>> GetDashboardStatsAsync()
     {
-        var today = DateTime.Today;
+        var (dayStart, dayEnd) = ClinicCalendar.UtcDay((clock ?? TimeProvider.System).GetUtcNow());
 
         var todaysSessionsQuery = _context.Appointments
-            .Where(x => x.StartTime.Date == today);
+            .Where(x => x.StartTime >= dayStart && x.StartTime < dayEnd);
 
         var todaysSessionsCount = await todaysSessionsQuery.CountAsync();
 
@@ -30,11 +30,14 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
             .CountAsync();
 
         var invoicesToday = await _context.Invoices
-            .Where(x => x.CreatedAt.Date == today)
+            .Where(x => x.CreatedAt >= dayStart && x.CreatedAt < dayEnd)
             .ToListAsync();
 
         var totalExpected = invoicesToday.Sum(x => x.TotalAmount);
-        var totalCollected = await _context.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentDate.Date == today).SumAsync(p => p.Amount);
+        var receipts = await _context.Payments.AsNoTracking().Where(p => p.Status == PaymentStatus.Paid && p.PaymentDate >= dayStart && p.PaymentDate < dayEnd)
+            .Select(p => new { p.Amount, p.PayerType, p.PaymentMethod }).ToListAsync();
+        var totalCollected = receipts.Sum(p => p.Amount);
+        var insurerCollected = receipts.Where(p => p.PayerType is "Insurer" or "Insurance" || p.PaymentMethod == PaymentMethod.Insurance).Sum(p => p.Amount);
 
         double collectionRate = totalExpected > 0 ? (double)(totalCollected / totalExpected) * 100 : 0;
 
@@ -45,6 +48,8 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
             PendingPayments = pendingPaymentsCount,
             TotalExpectedToday = totalExpected,
             TotalCollectedToday = totalCollected,
+            PatientCollectedToday = totalCollected - insurerCollected,
+            InsurerCollectedToday = insurerCollected,
             CollectionRate = Math.Round(collectionRate, 2)
         };
 
@@ -56,7 +61,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
         if (request.PageNumber < 1) request.PageNumber = 1;
         if (request.PageSize < 1) request.PageSize = 10;
 
-        var today = DateTime.Today;
+        var (dayStart, dayEnd) = ClinicCalendar.UtcDay((clock ?? TimeProvider.System).GetUtcNow());
 
         var query = _context.Appointments
             .Include(x => x.Patient)
@@ -64,7 +69,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
             .Include(x => x.Doctor)
             .Include(x => x.Room)
             .Include(x => x.TreatmentPlanSession)
-            .Where(x => x.StartTime.Date == today)
+            .Where(x => x.StartTime >= dayStart && x.StartTime < dayEnd)
             .AsNoTracking()
             .AsQueryable();
 
@@ -125,6 +130,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
     {
         try { await bookings.TransitionAsync(appointmentId, newStatus); return Result.Success(); }
         catch (BookingRuleException e) { return Result.Failure(new(e.Code, e.Message, e.Status)); }
+        catch (Microsoft.Data.SqlClient.SqlException e) when (e.Number is 1205 or 1222) { return Result.Failure(new("Booking.ConcurrentChange", "The session changed concurrently. Refresh before starting again.", 409)); }
     }
 
     public Task<Result> CancelAppointmentAsAbsentAsync(int appointmentId) => UpdateAppointmentStatusAsync(appointmentId, AppointmentStatus.Cancelled);

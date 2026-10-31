@@ -7,6 +7,7 @@ public class BookingBatch : BaseEntity
     public string IdempotencyKey { get; set; } = "";
     public string RequestHash { get; set; } = "";
     public int PatientId { get; set; }
+    public int? CourseAgreementId { get; set; }
     public string PricingMode { get; set; } = "";
     public decimal GrossAmount { get; set; }
     public decimal Discount { get; set; }

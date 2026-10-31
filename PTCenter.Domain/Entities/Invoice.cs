@@ -9,7 +9,10 @@ public class Invoice : BaseEntity
 
     public string InvoiceNumber { get; set; } = null!;
 
-    public int AppointmentId { get; set; }
+    public int? AppointmentId { get; set; }
+    public int? CourseAgreementId { get; set; }
+    public int? TreatmentPlanSessionId { get; set; }
+    public DateTime? DeliveredAt { get; set; }
 
     public int PatientId { get; set; }
 
@@ -31,7 +34,7 @@ public class Invoice : BaseEntity
 
     public virtual Patient Patient { get; set; } = null!;
 
-    public virtual Appointment Appointment { get; set; } = null!;
+    public virtual Appointment? Appointment { get; set; }
 
     public virtual ICollection<Payment> Payments { get; set; }
         = new List<Payment>();

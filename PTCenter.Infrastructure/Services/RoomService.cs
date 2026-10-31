@@ -13,6 +13,24 @@ public class RoomService(ApplicationDbContext context) : IRoomService
 {
     private readonly ApplicationDbContext _context = context;
 
+    public async Task<Result<List<RoomResponse>>> GetAvailableAsync(RoomAvailabilityRequest request)
+    {
+        if (request.StartsAt.Count is < 1 or > 200 || request.StartsAt.Any(start => start > DateTimeOffset.MaxValue.AddHours(-1)))
+            return Result.Failure<List<RoomResponse>>(new("Room.InvalidTimes", "Select between 1 and 200 valid appointment times.", 400));
+        var intervals = request.StartsAt.Select(start => (Start: start.UtcDateTime, End: start.UtcDateTime.AddHours(1))).ToArray();
+        var earliest = intervals.Min(slot => slot.Start);
+        var latest = intervals.Max(slot => slot.End);
+        var rooms = await _context.Rooms.AsNoTracking().Where(room => room.IsActive && room.Capacity > 0).OrderBy(room => room.Id).ToListAsync();
+        var reservations = await _context.Appointments.AsNoTracking()
+            .Where(a => a.RoomId != null && (a.Status == AppointmentStatus.Pending || a.Status == AppointmentStatus.InProgress) &&
+                (a.Status == AppointmentStatus.InProgress && a.ActualCheckOut == null || a.StartTime < latest && a.EndTime > earliest))
+            .Select(a => new { a.RoomId, a.StartTime, a.EndTime, a.Status, a.ActualCheckOut }).ToListAsync();
+        var available = rooms.Where(room => !reservations.Any(a => a.RoomId == room.Id &&
+            (a.Status == AppointmentStatus.InProgress && a.ActualCheckOut == null || intervals.Any(slot => a.StartTime < slot.End && a.EndTime > slot.Start))));
+        return Result.Success(available.Select(room => new RoomResponse { Id = room.Id, Name = room.Name, Capacity = room.Capacity,
+            IsActive = room.IsActive, Status = StatusRoom.Available, CurrentLoad = 0 }).ToList());
+    }
+
     public async Task<Result<List<RoomResponse>>> GetAllAsync()
     {
         var rooms = await _context.Rooms
@@ -157,11 +175,8 @@ public class RoomService(ApplicationDbContext context) : IRoomService
             .AsNoTracking()
             .Where(x =>
                 x.RoomId == room.Id &&
-                x.StartTime <= now &&
-                x.EndTime > now &&
-                x.Status != AppointmentStatus.Cancelled &&
-                x.Status != AppointmentStatus.Completed &&
-                x.Status != AppointmentStatus.NoShow)
+                (x.Status == AppointmentStatus.InProgress && x.ActualCheckOut == null ||
+                 x.Status == AppointmentStatus.Pending && x.StartTime <= now && x.EndTime > now))
             .Select(x => new
             {
                 x.DoctorId,

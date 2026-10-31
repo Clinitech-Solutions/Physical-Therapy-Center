@@ -1,0 +1,21 @@
+# Patient Profile scheduling
+
+## Current activation status - 2026-10-31, 15:12 Cairo
+
+The user subsequently authorized applying the audit migration. Only `20261031122754_AppointmentScheduleAudit` was applied to the freshly rechecked `db56823.public.databaseasp.net` / `db56823` target. History/schema are verified and no migrations remain pending. The running local profile for patient 13, dashboard and invoice GETs now return **200** against SQL Server. Existing counts and financial sums are unchanged; no shared test records, scheduling writes, push or deployment. See the [application report](Database/ReviewedMigrations/20261031122754_AppointmentScheduleAudit.APPLIED.md). This supersedes the implementation-stage migration blocker below; SQL Server mutation/concurrency tests remain unperformed.
+
+## Implementation-stage record
+
+The shared frontend redesign and full evidence/contract report are in sibling [PATIENT_PROFILE.md](../physical-therapy-project-Admin-Panel/PATIENT_PROFILE.md).
+
+Narrow additions to BookingService/BookingsController provide patient-scoped course/session/payment/activity data, real availability with edited-appointment self-exclusion, an audited single-session save and original-operation reconciliation. The existing Booking schedule/overlap validator is shared; clinician working-hours, exclusive room/clinician reservations, clinical eligibility and financial rules remain authoritative.
+
+The new Receptionist/Ceo/Admin/Owner write endpoint preserves appointment/session/patient/course/clinician identities and all financial records. It requires an expected schedule version and stable operation key, validates inside a Serializable transaction, and writes an immutable audit/receipt with the same commit. The existing `Appointments.UpdatedAt` column is an optimistic concurrency token. Completed/in-progress/cancelled/no-show/past records cannot be reopened through either reschedule path. Identical retries return their committed receipt; changed-key intent and stale schedules return conflict. The same actor can reconcile a committed operation. Staff read access and nonstaff denials remain enforced.
+
+Migration **`20261031122754_AppointmentScheduleAudit` is prepared but NOT applied**. [Forward SQL](Database/ReviewedMigrations/20261031122754_AppointmentScheduleAudit.sql) SHA256: `D4EFC568F1FCA88BB32C2CF5CC1E038FDF5C1D0C80E10361A1E2AB2FC1D72769`. It only creates `AppointmentScheduleChanges`, indexes and restrictive foreign keys; no existing data or financial values are updated/deleted. A missing audit table produces an administrative-setup 503 on the new profile read. No shared database migration/test writes, push or deployment occurred. Main shared activation requires explicit migration authorization plus loading the matching API build. Earlier finance approval applies only to its already-applied migration.
+
+Final validation: **145 backend tests passed**, including isolated SQLite/TestServer scheduling/authorization/invariant/concurrency scenarios and offline SQL Server snapshot/script checks. A focused real-login HTTP scenario was rerun after the missing-schema handler. Frontend: **87 focused mocked HTTP/component tests**, warning-free production build, and actual Chrome/Angular integration against a rebuilt isolated SQLite API. The latter used a real Receptionist account and real returned slots; synthetic schedules/financial records only. Three committed changes had three persisted activity entries; lost-response reconciliation, stale second-client rejection, reload, unchanged course totals/payments/other sessions and both themes/RTL/mobile were checked.
+
+SQL Server runtime audit migration execution and shared-database financial/scheduling writes were not attempted. No historical audit entries are invented. Old scheduling endpoints remain compatible; the new profile endpoint is the durable audited operation/reconciliation contract. Down removes audit history and must not be treated as a data-preserving rollback.
+
+Local ignored evidence: `.tools/profile-tests.log`, `.tools/profile-http-final.log`, `.tools/profile-migration-script.log`, `.tools/profile-preview.log`; sibling `tmp/patient-profile-preview/result.json` and visual captures. The temporary preview API is stopped after verification.

@@ -16,5 +16,6 @@ public class UserResponse
     public DateTime BirthDate { get; set; }
 
     public IEnumerable<string> Roles { get; set; } = [];
+    public List<StaffWorkingHours> WorkingHours { get; set; } = [];
 }
 

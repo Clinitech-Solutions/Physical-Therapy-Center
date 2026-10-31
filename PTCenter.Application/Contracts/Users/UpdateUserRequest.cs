@@ -10,5 +10,6 @@ public class UpdateUserRequest
     public Gender Gender { get; set; }
     public DateTime BirthDate { get; set; }
     public List<string> Roles { get; set; } = [];
+    public List<StaffWorkingHours>? WorkingHours { get; set; }
 }
 

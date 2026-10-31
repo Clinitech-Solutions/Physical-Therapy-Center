@@ -280,8 +280,8 @@ public class PatientService(
                 PatientErrors.PatientNotFound);
         }
 
-        var userName = request.UserName.Trim();
-        var email = request.Email.Trim();
+        var userName = request.UserName?.Trim() ?? user.UserName!;
+        var email = request.Email?.Trim() ?? user.Email;
 
         var existingUserName =
             await _userManager.FindByNameAsync(userName);
@@ -293,7 +293,7 @@ public class PatientService(
                 PatientErrors.PatientAlreadyExists);
         }
 
-        var existingEmail =
+        var existingEmail = string.IsNullOrEmpty(email) ? null :
             await _userManager.FindByEmailAsync(email);
 
         if (existingEmail is not null &&
@@ -309,9 +309,9 @@ public class PatientService(
         try
         {
             // Update patient-specific fields.
-            patient.PaymentType = request.PaymentType;
-            patient.EmergencyContact = request.EmergencyContact;
-            patient.InsuranceCompanyId = request.InsuranceCompanyId;
+            if (request.PaymentTypeProvided) patient.PaymentType = request.PaymentType;
+            if (request.EmergencyContactProvided) patient.EmergencyContact = request.EmergencyContact;
+            if (request.InsuranceCompanyIdProvided) patient.InsuranceCompanyId = request.InsuranceCompanyId;
 
             // Uses InsuranceDetailsResponse as requested.
             if (request.InsuranceDetails is not null)
@@ -333,7 +333,7 @@ public class PatientService(
                 patient.InsuranceDetails.Employer =
                     request.InsuranceDetails.Employer;
             }
-            else
+            else if (request.InsuranceDetailsProvided)
             {
                 patient.InsuranceDetails = null;
             }
@@ -341,10 +341,10 @@ public class PatientService(
             // Update the linked Identity user.
             user.UserName = userName;
             user.Email = email;
-            user.PhoneNumber = request.PhoneNumber?.Trim();
-            user.FullName = request.FullName.Trim();
-            user.BirthDate = request.BirthDate;
-            user.Gender = request.Gender;
+            if (request.PhoneNumber is not null) user.PhoneNumber = request.PhoneNumber.Trim();
+            if (request.FullName is not null) user.FullName = request.FullName.Trim();
+            if (request.BirthDate.HasValue) user.BirthDate = request.BirthDate.Value;
+            if (request.Gender.HasValue) user.Gender = request.Gender.Value;
 
             var identityResult = await _userManager.UpdateAsync(user);
             if (!identityResult.Succeeded)
@@ -393,9 +393,6 @@ public class PatientService(
                 PatientErrors.PatientNotFound);
         }
 
-        var user = await _userManager.FindByIdAsync(
-            patient.ApplicationUserId);
-
         await using var transaction =
             await _context.Database.BeginTransactionAsync();
 
@@ -404,25 +401,8 @@ public class PatientService(
             _context.Patients.Remove(patient);
             await _context.SaveChangesAsync();
 
-            if (user is not null)
-            {
-                var identityResult =
-                    await _userManager.DeleteAsync(user);
-
-                if (!identityResult.Succeeded)
-                {
-                    LogIdentityErrors(
-                        "Delete patient user",
-                        user.UserName ?? user.Id,
-                        identityResult.Errors);
-
-                    await transaction.RollbackAsync();
-
-                    return Result.Failure(
-                        PatientErrors.DeleteFailed);
-                }
-            }
-
+            // Patients use soft deletion. Retain the Identity principal required by
+            // historical records; reception profile deletion must not delete staff accounts.
             await transaction.CommitAsync();
             return Result.Success();
         }

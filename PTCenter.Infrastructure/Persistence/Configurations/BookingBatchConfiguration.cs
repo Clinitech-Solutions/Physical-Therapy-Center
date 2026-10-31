@@ -9,6 +9,7 @@ public class BookingBatchConfiguration : IEntityTypeConfiguration<BookingBatch>
     public void Configure(EntityTypeBuilder<BookingBatch> b)
     {
         b.HasKey(x => x.Id);
+        b.HasOne<TreatmentCourseAgreement>().WithMany().HasForeignKey(x => x.CourseAgreementId).OnDelete(DeleteBehavior.Restrict);
         b.Property(x => x.IdempotencyKey).HasMaxLength(100);
         b.HasIndex(x => x.IdempotencyKey).IsUnique();
         b.Property(x => x.RequestHash).HasMaxLength(64);

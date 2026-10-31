@@ -17,10 +17,24 @@ public class BookingsController(BookingService service) : ControllerBase
     {
         try { return Ok(await action()); }
         catch (BookingRuleException error) { return Problem(statusCode: error.Status, title: error.Code, detail: error.Message); }
+        catch (Microsoft.Data.SqlClient.SqlException error) when (error.Number == 208 && error.Message.Contains("AppointmentScheduleChanges", StringComparison.Ordinal))
+        { return Problem(statusCode: 503, title: "Booking.ScheduleAuditUnavailable", detail: "Patient profile scheduling is awaiting administrative setup. Please contact an administrator."); }
+        catch (DbUpdateConcurrencyException) { return Problem(statusCode: 409, title: "Booking.StaleSchedule", detail: "This appointment changed. Review its latest schedule before saving."); }
         catch (DbUpdateException) { return Problem(statusCode: 409, title: "Booking.ConcurrentChange", detail: "Booking data changed. Reconcile the retry key before trying again."); }
+        catch (Microsoft.Data.SqlClient.SqlException error) when (error.Number is 1205 or 1222) { return Problem(statusCode: 409, title: "Booking.ConcurrentChange", detail: "Booking data changed concurrently. Reconcile the same operation key before retrying."); }
     }
     [HttpGet("patients")]
     public Task<IActionResult> Directory([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 100) => Execute(() => service.DirectoryAsync(pageNumber, pageSize));
+    [HttpGet("patients/{id:int}/profile")]
+    public Task<IActionResult> Profile(int id) => Execute(() => service.ProfileAsync(id));
+    [HttpGet("appointments/{id:int}/reschedule-slots")]
+    public Task<IActionResult> RescheduleSlots(int id,[FromQuery] DateOnly date,CancellationToken cancellationToken) => Execute(() => service.RescheduleAvailabilityAsync(id,date,cancellationToken));
+    [HttpPut("appointments/{id:int}/reschedule")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
+    public Task<IActionResult> RescheduleSession(int id,RescheduleSessionRequest request) => Execute(() => service.RescheduleSessionAsync(id,request,User.FindFirstValue(ClaimTypes.NameIdentifier)??""));
+    [HttpGet("appointments/{id:int}/reschedules/{key}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
+    public Task<IActionResult> RescheduleReceipt(int id,string key) => Execute(() => service.RescheduleReceiptAsync(id,key,User.FindFirstValue(ClaimTypes.NameIdentifier)??""));
     [HttpGet("patients/{id:int}")]
     public Task<IActionResult> Context(int id) => Execute(() => service.ContextAsync(id));
     [HttpGet("clinicians/workload")]

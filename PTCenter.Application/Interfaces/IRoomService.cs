@@ -6,6 +6,7 @@ namespace PTCenter.Application.Interfaces;
 public interface IRoomService
 {
     Task<Result<List<RoomResponse>>> GetAllAsync();
+    Task<Result<List<RoomResponse>>> GetAvailableAsync(RoomAvailabilityRequest request);
     Task<Result<RoomResponse>> GetByIdAsync(int id);
     Task<Result<RoomResponse>> CreateAsync(CreateRoomRequest request);
     Task<Result<RoomResponse>> UpdateAsync(int id, UpdateRoomRequest request);

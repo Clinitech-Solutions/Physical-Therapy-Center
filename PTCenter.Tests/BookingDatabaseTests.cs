@@ -11,7 +11,7 @@ using Xunit;
 namespace PTCenter.Tests;
 
 /// <summary>Real relational SQLite transactions, foreign keys and unique constraints. Never uses configured connection strings.</summary>
-public sealed class BookingDatabaseTests : IAsyncLifetime
+public sealed partial class BookingDatabaseTests : IAsyncLifetime
 {
     private readonly SqliteConnection connection = new("Data Source=:memory:");
     private ApplicationDbContext db = null!;
@@ -90,11 +90,11 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
     }
     [Fact] public async Task Bulk_package_allocates_discount_deposit_and_installments_without_marking_all_sessions_paid()
     {
-        var request=Treatment(await PlanAsync(),3);request.PricingMode="Package";request.PackagePrice=900;request.UnitPrice=null;request.Discount=100;request.Deposit=100;request.PaymentMethod=PaymentMethod.Cash;
+        var request=Treatment(await PlanAsync(),3);request.PricingMode="Package";request.UnitPrice=150;request.DiscountType="Fixed";request.DiscountValue=100;request.Deposit=100;request.PaymentMethod=PaymentMethod.Cash;
         request.Installments=[new(new(2030,3,1),700)];
         var receipt=await service.CreateAsync(request);
         Assert.Equal(800,receipt.TotalAmount);Assert.Equal(100,receipt.PaidAmount);Assert.Equal(700,receipt.RemainingAmount);
-        Assert.Equal(3,await db.Invoices.CountAsync());Assert.Equal(800,await db.Invoices.SumAsync(i=>i.TotalAmount));
+        Assert.Equal(6,await db.Invoices.CountAsync());Assert.Equal(800,await db.Invoices.SumAsync(i=>i.TotalAmount));
         Assert.Equal(100,await db.Payments.SumAsync(p=>p.Amount));
         Assert.All(await db.TreatmentPlanSessions.ToListAsync(),s=>Assert.Equal(PaymentStatus.Pending,s.PaymentStatus));
         var context=await service.ContextAsync(patientId);Assert.Equal(6,context.Plans[0].PlannedSessions);Assert.Equal(3,context.Plans[0].BookedSessions);Assert.Equal(0,context.Plans[0].CompletedSessions);
@@ -115,7 +115,7 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
     [Fact] public async Task Insurance_treatment_enforces_approval_and_remaining_limits_and_uses_percentage_as_percentage()
     {
         var plan=await PlanAsync(6,true);var request=Treatment(plan,2);var receipt=await service.CreateAsync(request);
-        Assert.Equal(40,receipt.PatientAmount);Assert.Equal(160,receipt.InsuranceAmount);Assert.Equal(0,receipt.PaidAmount);
+        Assert.Equal(80,receipt.PatientAmount);Assert.Equal(320,receipt.InsuranceAmount);Assert.Equal(0,receipt.PaidAmount);
         Assert.Equal(2,(await service.ContextAsync(patientId)).RemainingApprovedSessions);
         var tooMany=Treatment(plan,3);tooMany.StartsAt=tooMany.StartsAt.Select(d=>d.AddDays(10)).ToList();Assert.Contains("InsuranceLimit",(await service.PreviewAsync(tooMany)).Errors);
         var p=await db.Patients.FindAsync(patientId);p!.InsuranceDetails!.Status=InsuranceStatus.Pending;await db.SaveChangesAsync();
@@ -132,7 +132,8 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
     }
     [Fact] public async Task Actual_check_in_and_out_are_explicit_and_completion_is_counted_once()
     {
-        var receipt=await service.CreateAsync(Treatment(await PlanAsync(),1));var id=receipt.Appointments[0].Id;
+        var request=Treatment(await PlanAsync(),1);request.Deposit=100;request.PaymentMethod=PaymentMethod.Cash;
+        var receipt=await service.CreateAsync(request);var id=receipt.Appointments[0].Id;
         await service.TransitionAsync(id,AppointmentStatus.InProgress);
         var appointment=await db.Appointments.SingleAsync();var entered=appointment.ActualCheckIn;
         await service.TransitionAsync(id,AppointmentStatus.InProgress);Assert.Equal(entered,appointment.ActualCheckIn);Assert.Null(appointment.ActualCheckOut);
@@ -165,8 +166,8 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
     {
         var receipt=await service.CreateAsync(Treatment(await PlanAsync(2,true),1));
         var collected=await service.CollectAsync(receipt.IdempotencyKey,new(Guid.NewGuid().ToString(),20,PaymentMethod.Cash));
-        Assert.Equal(0,collected.RemainingAmount);Assert.Equal(80,collected.InsuranceAmount);
-        Assert.Equal(InvoiceStatus.Pending,(await db.Invoices.SingleAsync()).Status);
+        Assert.Equal(20,collected.RemainingAmount);Assert.Equal(160,collected.InsuranceAmount);
+        Assert.All(await db.Invoices.ToListAsync(), i => Assert.Equal(InvoiceStatus.Pending,i.Status));
         Assert.Equal(PaymentStatus.Pending,(await db.TreatmentPlanSessions.FirstAsync()).PaymentStatus);
     }
     [Fact] public async Task Actual_payment_method_is_required_and_invoice_payment_retry_cannot_duplicate_collection()
@@ -193,6 +194,7 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
         var id=await PlanAsync();
         var invalid= new List<BookingRequest>();
         var discount=Treatment(id);discount.Discount=201;invalid.Add(discount);
+        var negativeDiscount=Treatment(id);negativeDiscount.Discount=-1;invalid.Add(negativeDiscount);
         var deposit=Treatment(id);deposit.Deposit=201;deposit.PaymentMethod=PaymentMethod.Cash;invalid.Add(deposit);
         var noMethod=Treatment(id);noMethod.Deposit=1;invalid.Add(noMethod);
         var installments=Treatment(id);installments.Installments=[new(new(2030,3,1),199)];invalid.Add(installments);
@@ -212,7 +214,8 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
     }
     [Fact] public async Task An_overdue_appointment_remains_occupied_until_explicit_check_out()
     {
-        var receipt=await service.CreateAsync(Treatment(await PlanAsync(),2));
+        var request=Treatment(await PlanAsync(),2);request.Deposit=200;request.PaymentMethod=PaymentMethod.Cash;
+        var receipt=await service.CreateAsync(request);
         await service.TransitionAsync(receipt.Appointments[0].Id,AppointmentStatus.InProgress);
         var current=await db.Appointments.FindAsync(receipt.Appointments[0].Id);current!.ActualCheckIn=DateTime.UtcNow.AddHours(-2);current.StartTime=DateTime.UtcNow.AddHours(-3);current.EndTime=DateTime.UtcNow.AddHours(-2);await db.SaveChangesAsync();
         var error=await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(receipt.Appointments[1].Id,AppointmentStatus.InProgress));
@@ -235,5 +238,59 @@ public sealed class BookingDatabaseTests : IAsyncLifetime
     {
         var patient=await db.Patients.FindAsync(patientId);patient!.PaymentType=null;await db.SaveChangesAsync();
         Assert.Contains("FundingTypeRequired",(await service.PreviewAsync(Assessment())).Errors);
+    }
+    [Fact] public async Task Room_availability_excludes_reservations_for_any_selected_slot_and_cancellation_releases_them()
+    {
+        var rooms = new RoomService(db);
+        var receipt = await service.CreateAsync(Assessment());
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start.AddHours(1)] })).Value);
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start.AddDays(1), start] })).Value);
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.Cancelled);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+    }
+
+    [Fact] public async Task An_occupied_room_stays_unavailable_past_planned_end_and_checkout_releases_it_immediately()
+    {
+        var rooms = new RoomService(db);
+        var receipt = await service.CreateAsync(Assessment());
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.InProgress);
+        var appointment = await db.Appointments.FindAsync(receipt.Appointments[0].Id);
+        appointment!.StartTime = DateTime.UtcNow.AddHours(-3); appointment.EndTime = DateTime.UtcNow.AddHours(-2);
+        await db.SaveChangesAsync();
+        Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Occupied, (await rooms.GetByIdAsync(1)).Value.Status);
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.Contains("RoomConflict", (await service.PreviewAsync(Assessment())).Appointments[0].Conflicts);
+        await service.TransitionAsync(appointment.Id, AppointmentStatus.Completed);
+        Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Available, (await rooms.GetByIdAsync(1)).Value.Status);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+    }
+
+    [Fact] public async Task Early_checkout_releases_the_original_reserved_interval_without_reactivating_maintenance_rooms()
+    {
+        var rooms = new RoomService(db);
+        var receipt = await service.CreateAsync(Assessment());
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.InProgress);
+        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.Completed);
+        Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.True((await service.PreviewAsync(Assessment())).CanSave);
+        var room = await db.Rooms.FindAsync(1); room!.IsActive = false; await db.SaveChangesAsync();
+        Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
+        Assert.Equal(PTCenter.Application.Contracts.Rooms.StatusRoom.Maintenance, (await rooms.GetByIdAsync(1)).Value.Status);
+    }
+    [Fact] public async Task Saving_explicit_Cairo_working_hours_unblocks_a_missing_schedule_and_allows_booking()
+    {
+        db.DoctorSchedules.RemoveRange(await db.DoctorSchedules.Where(s => s.DoctorId == "senior").ToListAsync());
+        await db.SaveChangesAsync();
+        var request = Assessment(); // Monday 10:00 UTC = 12:00 Cairo in February.
+        Assert.Contains("WorkingHoursNotConfigured", (await service.PreviewAsync(request)).Appointments[0].Conflicts);
+        db.DoctorSchedules.Add(new DoctorSchedule { DoctorId = "senior", DayOfWeek = (int)DayOfWeek.Monday, StartTime = new(12, 0), EndTime = new(13, 0) });
+        await db.SaveChangesAsync();
+        Assert.True((await service.PreviewAsync(request)).CanSave);
+        var receipt = await service.CreateAsync(request);
+        Assert.Single(receipt.Appointments);
+        Assert.Equal(request.StartsAt[0], receipt.Appointments[0].StartTime);
+        request.StartsAt = [start.AddMinutes(30)];
+        Assert.Contains("OutsideWorkingHours", (await service.PreviewAsync(request)).Appointments[0].Conflicts);
     }
 }

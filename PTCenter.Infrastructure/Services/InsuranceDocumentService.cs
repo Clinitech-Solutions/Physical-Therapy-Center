@@ -39,9 +39,9 @@ public class InsuranceDocumentService(
             var document = new InsuranceDocument
             {
                 PatientId = request.PatientId,
-                FileName = file.FileName,
+                FileName = Path.GetFileName(file.FileName.Replace('\\', '/')),
                 FilePath = filePath,
-                ContentType = file.ContentType,
+                ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
                 UploadedAt = DateTime.UtcNow
             };
 
@@ -74,11 +74,12 @@ public class InsuranceDocumentService(
         return Result.Success(response);
     }
 
-    public async Task<Result<List<InsuranceDocumentResponse>>> GetAllAsync()
+    public async Task<Result<List<InsuranceDocumentResponse>>> GetAllAsync(int? patientId = null)
     {
         var documents = await _context.InsuranceDocuments
             .Include(x => x.Patient)
             .ThenInclude(x => x.ApplicationUser)
+            .Where(x => patientId == null || x.PatientId == patientId)
             .AsNoTracking()
             .ToListAsync();
 
@@ -135,9 +136,9 @@ public class InsuranceDocumentService(
 
             var filePath = await SaveFileAsync(request.File);
 
-            document.FileName = request.File.FileName;
+            document.FileName = Path.GetFileName(request.File.FileName.Replace('\\', '/'));
             document.FilePath = filePath;
-            document.ContentType = request.File.ContentType;
+            document.ContentType = string.IsNullOrWhiteSpace(request.File.ContentType) ? "application/octet-stream" : request.File.ContentType;
         }
 
         await _context.SaveChangesAsync();
@@ -163,12 +164,12 @@ public class InsuranceDocumentService(
 
     private async Task<string> SaveFileAsync(IFormFile file)
     {
-        var folder = Path.Combine(_environment.WebRootPath, "uploads", "insurance-documents");
+        var folder = Path.Combine(_environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot"), "uploads", "insurance-documents");
 
         if (!Directory.Exists(folder))
             Directory.CreateDirectory(folder);
 
-        var fileName = $"{Guid.NewGuid()}_{file.FileName}";
+        var fileName = $"{Guid.NewGuid():N}{Path.GetExtension(Path.GetFileName(file.FileName.Replace('\\', '/')))}";
         var fullPath = Path.Combine(folder, fileName);
 
         await using var stream = new FileStream(fullPath, FileMode.Create);
@@ -179,11 +180,12 @@ public class InsuranceDocumentService(
 
     private void DeleteFile(string filePath)
     {
-        var fullPath = Path.Combine(
-            _environment.WebRootPath,
-            filePath.TrimStart('/').Replace("/", Path.DirectorySeparatorChar.ToString()));
+        var root = Path.GetFullPath(Path.Combine(_environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot"), "uploads", "insurance-documents")) + Path.DirectorySeparatorChar;
+        var fullPath = Path.GetFullPath(Path.Combine(
+            _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot"),
+            filePath.TrimStart('/').Replace("/", Path.DirectorySeparatorChar.ToString())));
 
-        if (File.Exists(fullPath))
+        if (fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
             File.Delete(fullPath);
     }
 }

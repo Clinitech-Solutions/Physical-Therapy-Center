@@ -10,7 +10,7 @@ namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]/[action]")]
-[Authorize]
+[Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class PatientsController(
     IPatientService patientService) : ControllerBase
 {
@@ -19,6 +19,7 @@ public class PatientsController(
     
     
     [HttpPost]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     [ProducesResponseType(typeof(PatientResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -59,6 +60,7 @@ public class PatientsController(
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     [ProducesResponseType(typeof(PatientResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -74,6 +76,7 @@ public class PatientsController(
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)

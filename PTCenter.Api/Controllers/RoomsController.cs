@@ -6,9 +6,18 @@ namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class RoomsController(IRoomService roomService) : ControllerBase
 {
     private readonly IRoomService _roomService = roomService;
+
+    [HttpPost("availability")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Receptionist,Senior,Doctor,Ceo,Admin,Owner")]
+    public async Task<IActionResult> Availability(RoomAvailabilityRequest request)
+    {
+        var result = await _roomService.GetAvailableAsync(request);
+        return result.IsSuccess ? Ok(result.Value) : StatusCode(result.Error.StatusCode ?? 400, result.Error);
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -35,6 +44,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpPost]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> Create(
         [FromBody] CreateRoomRequest request)
     {
@@ -48,6 +58,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> Update(
         int id,
         [FromBody] UpdateRoomRequest request)
@@ -67,6 +78,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpPatch("{id:int}/maintenance")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> UpdateMaintenance(
         int id,
         [FromBody] MaintenanceRequest request)
@@ -82,6 +94,7 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public async Task<IActionResult> Delete(int id)
     {
         var result = await _roomService.DeleteAsync(id);

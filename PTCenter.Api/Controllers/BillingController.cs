@@ -1,96 +1,42 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using PTCenter.Application.Abstractions;
 using PTCenter.Application.Contracts.Billing;
 using PTCenter.Application.Interfaces;
-using Microsoft.AspNetCore.Authorization;
 
 namespace PTCenter.Api.Controllers;
 
 [ApiController]
 [Authorize(Roles = "Receptionist,Senior,Doctor,Ceo,Admin,Owner")]
 [Route("api/[controller]")]
-public class BillingController : ControllerBase
+public class BillingController(IBillingService billing) : ControllerBase
 {
-    private readonly IBillingService _billingService;
-
-    public BillingController(IBillingService billingService)
+    private async Task<IActionResult> Execute<T>(Func<Task<Result<T>>> action)
     {
-        _billingService = billingService;
+        try {
+            var result=await action();
+            return result.IsFailure ? StatusCode(result.Error.StatusCode ?? 400,result.Error) : Ok(result.Value);
+        }
+        catch(DbUpdateException) { return Conflict(new {code="Billing.ConcurrentChange",description="Financial records changed. Check the original payment history before retrying with the same key."}); }
+        catch(Microsoft.Data.SqlClient.SqlException error) when(error.Number is 1205 or 1222)
+        { return Conflict(new {code="Billing.ConcurrentChange",description="Financial records changed concurrently. Check the original payment history before retrying with the same key."}); }
     }
-
     [HttpGet("invoices")]
-    public async Task<IActionResult> GetAllInvoices()
-    {
-        var result = await _billingService.GetAllInvoicesAsync();
-
-        if (result.IsFailure)
-            return BadRequest(result.Error);
-
-        return Ok(result.Value);
-    }
-
+    public Task<IActionResult> GetAllInvoices() => Execute(billing.GetAllInvoicesAsync);
     [HttpGet("invoices/{id:int}")]
-    public async Task<InvoiceResponse> GetInvoiceById(int id) // تم تعديلها لتتوافق مع الـ Frontend أو إرجاع IActionResult
-    {
-        var result = await _billingService.GetInvoiceByIdAsync(id);
-
-        if (result.IsFailure)
-            return null!; // أو NotFound
-
-        return result.Value;
-    }
-
+    public Task<IActionResult> GetInvoiceById(int id) => Execute(()=>billing.GetInvoiceByIdAsync(id));
     [HttpPost("invoices")]
-    public async Task<IActionResult> CreateInvoice([FromBody] CreateInvoiceRequest request)
-    {
-        var result = await _billingService.CreateInvoiceAsync(request);
-
-        if (result.IsFailure)
-            return BadRequest(result.Error);
-
-        return Ok(result.Value);
-    }
-
+    public Task<IActionResult> CreateInvoice(CreateInvoiceRequest request) => Execute(()=>billing.CreateInvoiceAsync(request));
     [HttpPatch("invoices/{id:int}/status")]
-    public async Task<IActionResult> UpdateInvoiceStatus(int id, [FromBody] UpdateInvoiceStatusRequest request)
-    {
-        var result = await _billingService.UpdateInvoiceStatusAsync(id, request);
-
-        if (result.IsFailure)
-            return BadRequest(result.Error);
-
-        return Ok(result.Value);
-    }
-
+    public Task<IActionResult> UpdateInvoiceStatus(int id,UpdateInvoiceStatusRequest request) => Execute(()=>billing.UpdateInvoiceStatusAsync(id,request));
     [HttpDelete("invoices/{id:int}")]
-    public async Task<IActionResult> DeleteInvoice(int id)
-    {
-        var result = await _billingService.DeleteInvoiceAsync(id);
-
-        if (result.IsFailure)
-            return BadRequest(result.Error);
-
-        return Ok(new { message = "Invoice deleted successfully." });
-    }
-
+    public Task<IActionResult> DeleteInvoice(int id) => Execute(async()=>{
+        var result=await billing.DeleteInvoiceAsync(id);
+        return result.IsFailure ? Result.Failure<object>(result.Error) : Result.Success<object>(new{message="Invoice deleted successfully."});
+    });
     [HttpPost("payments")]
-    public async Task<IActionResult> AddPayment([FromBody] CreatePaymentRequest request)
-    {
-        var result = await _billingService.AddPaymentAsync(request);
-
-        if (result.IsFailure)
-            return BadRequest(result.Error);
-
-        return Ok(result.Value);
-    }
-
+    public Task<IActionResult> AddPayment(CreatePaymentRequest request) => Execute(()=>billing.AddPaymentAsync(request));
     [HttpGet("invoices/{invoiceId:int}/payments")]
-    public async Task<IActionResult> GetPaymentsByInvoiceId(int invoiceId)
-    {
-        var result = await _billingService.GetPaymentsByInvoiceIdAsync(invoiceId);
-
-        if (result.IsFailure)
-            return NotFound(result.Error);
-
-        return Ok(result.Value);
-    }
+    public Task<IActionResult> GetPaymentsByInvoiceId(int invoiceId) => Execute(()=>billing.GetPaymentsByInvoiceIdAsync(invoiceId));
 }

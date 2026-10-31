@@ -10,6 +10,9 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
     public void Configure(EntityTypeBuilder<Invoice> b)
     {
         b.HasKey(x => x.Id);
+        b.HasOne<TreatmentCourseAgreement>().WithMany().HasForeignKey(x => x.CourseAgreementId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<TreatmentPlanSession>().WithMany().HasForeignKey(x => x.TreatmentPlanSessionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.CourseAgreementId, x.TreatmentPlanSessionId }).IsUnique().HasFilter("[CourseAgreementId] IS NOT NULL AND [TreatmentPlanSessionId] IS NOT NULL");
 
         b.Property(x => x.InvoiceNumber)
             .HasMaxLength(50)
