@@ -22,7 +22,7 @@ public partial class CourseFinanceService
             var companyId = agreement?.InsuranceCompanyId ?? i.Patient.InsuranceCompanyId;
             if (companyId == null) continue;
             var delivered = i.DeliveredAt ?? (i.Appointment?.Status == AppointmentStatus.Completed ? i.Appointment.ActualCheckOut : null);
-            var collected = i.Payments.Where(p => p.Status == PaymentStatus.Paid && (p.PayerType == "Insurer" || p.PaymentMethod == PaymentMethod.Insurance)).Sum(p => p.Amount);
+            var collected = i.Payments.Where(p => InsurerReceipt(p)).Sum(p => p.Amount);
             var earned = delivered != null ? i.InsuranceAmount : 0;
             var claim = claims.GetValueOrDefault(i.Id);
             rows.Add(new(i.Id, claim?.Id, i.CourseAgreementId, i.TreatmentPlanSessionId, i.PatientId, i.Patient.ApplicationUser.FullName,
@@ -77,7 +77,7 @@ public partial class CourseFinanceService
         }
         var claim = await db.InsuranceClaims.SingleOrDefaultAsync(c => c.Id == claimId) ?? throw Rule("ClaimNotFound", "The submitted claim was not found.", 404);
         var invoice = await db.Invoices.Include(i => i.Payments).SingleAsync(i => i.Id == claim.InvoiceId);
-        var received = invoice.Payments.Where(p => p.Status == PaymentStatus.Paid && (p.PayerType == "Insurer" || p.PaymentMethod == PaymentMethod.Insurance)).Sum(p => p.Amount);
+        var received = invoice.Payments.Where(p => InsurerReceipt(p)).Sum(p => p.Amount);
         if (request.Amount > claim.Amount - received) throw Rule("SettlementExceedsBalance", "The insurer receipt exceeds this claim's outstanding balance.");
         var payment = new Payment { InvoiceId = invoice.Id, InsuranceClaimId = claim.Id, Amount = request.Amount, PaymentMethod = PaymentMethod.Insurance,
             PayerType = "Insurer", CollectionMethod = request.Method.ToString(), IdempotencyKey = key, TransactionId = request.SettlementReference,

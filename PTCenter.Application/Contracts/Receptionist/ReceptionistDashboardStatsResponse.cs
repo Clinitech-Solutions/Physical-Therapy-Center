@@ -11,6 +11,8 @@ public class ReceptionistDashboardStatsResponse
     public int PendingPayments { get; set; }
     public decimal TotalExpectedToday { get; set; }
     public decimal TotalCollectedToday { get; set; }
+    public decimal PatientCollectedToday { get; set; }
+    public decimal InsurerCollectedToday { get; set; }
     public double CollectionRate { get; set; }
 }
 

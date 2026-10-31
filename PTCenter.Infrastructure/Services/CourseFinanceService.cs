@@ -14,7 +14,9 @@ public partial class CourseFinanceService(ApplicationDbContext db)
 {
     private static BookingRuleException Rule(string code, string message, int status = 400) => new("Booking." + code, message, status);
     public static bool Money(decimal value) => value >= 0 && value <= 999999999 && decimal.Round(value, 2) == value;
-    public static bool PatientReceipt(Payment payment) => payment.Status == PaymentStatus.Paid && payment.PaymentMethod != PaymentMethod.Insurance && payment.PayerType != "Insurer";
+    public static bool InsurerReceipt(Payment payment) => payment.Status == PaymentStatus.Paid &&
+        (payment.PaymentMethod == PaymentMethod.Insurance || payment.PayerType is "Insurer" or "Insurance");
+    public static bool PatientReceipt(Payment payment) => payment.Status == PaymentStatus.Paid && !InsurerReceipt(payment);
     public static decimal Allocate(decimal amount, int count, int number)
     {
         var cents = decimal.ToInt64(amount * 100); var basis = cents / count; var remainder = cents % count;

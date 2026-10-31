@@ -52,7 +52,7 @@ public partial class BookingService
             var appts=appointments.Where(a=>a.TreatmentPlanSessionId.HasValue&&ids.Contains(a.TreatmentPlanSessionId.Value)).ToList();
             var agreement=agreements.SingleOrDefault(a=>a.TreatmentPlanId==plan.Id);
             var bills=invoices.Where(i=>agreement!=null&&i.CourseAgreementId==agreement.Id || i.TreatmentPlanSessionId.HasValue&&ids.Contains(i.TreatmentPlanSessionId.Value) || appts.Any(a=>a.Id==i.AppointmentId)).ToList();
-            bool Insurer(Payment p)=>p.PayerType=="Insurance"||p.PaymentMethod==PaymentMethod.Insurance;
+            bool Insurer(Payment p)=>CourseFinanceService.InsurerReceipt(p);
             decimal PatientPaid(Invoice i)=>i.Payments.Where(p=>p.Status==PaymentStatus.Paid&&!Insurer(p)).Sum(p=>p.Amount);
             var paid=bills.Sum(PatientPaid);var insurerPaid=bills.Sum(i=>i.Payments.Where(p=>p.Status==PaymentStatus.Paid&&Insurer(p)).Sum(p=>p.Amount));
             var patientAmount=agreement?.PricingMode=="Package"?agreement.PatientAmount:bills.Sum(i=>i.PatientAmount);

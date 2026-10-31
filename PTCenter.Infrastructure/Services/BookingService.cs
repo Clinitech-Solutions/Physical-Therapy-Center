@@ -264,7 +264,7 @@ public partial class BookingService(ApplicationDbContext db)
         if (batch.CourseAgreementId != null) return await CourseReceiptAsync(batch, appointments);
         var ids = appointments.Select(a => a.Id).ToList();
         var invoices = await db.Invoices.AsNoTracking().Include(i => i.Payments).Where(i => i.AppointmentId != null && ids.Contains(i.AppointmentId.Value)).ToListAsync();
-        var paid = invoices.Sum(i => i.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentMethod != PaymentMethod.Insurance).Sum(p => p.Amount));
+        var paid = invoices.Sum(i => i.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount));
         return new(key, batch.PatientId, "Committed", appointments.Select(a => new BookedAppointment(a.Id, a.TreatmentPlanSessionId,
             new DateTimeOffset(DateTime.SpecifyKind(a.StartTime, DateTimeKind.Utc)), new DateTimeOffset(DateTime.SpecifyKind(a.EndTime, DateTimeKind.Utc)))).ToList(),
             invoices.Select(i => i.Id).ToList(), batch.TotalAmount, batch.PatientAmount, batch.InsuranceAmount, paid, Math.Max(0, batch.PatientAmount - paid),
@@ -351,14 +351,14 @@ public partial class BookingService(ApplicationDbContext db)
         }
         var invoices = await db.Invoices.Include(i => i.Payments).Include(i => i.Appointment).ThenInclude(a => a!.TreatmentPlanSession)
             .Where(i => i.Appointment != null && i.Appointment.BookingBatchId == batch.Id && i.Status != InvoiceStatus.Waived && i.Status != InvoiceStatus.Cancelled).OrderBy(i => i.Id).ToListAsync();
-        decimal Remaining(Invoice i) => i.PatientAmount - i.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentMethod != PaymentMethod.Insurance).Sum(p => p.Amount);
+        decimal Remaining(Invoice i) => i.PatientAmount - i.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
         if (request.Amount > invoices.Sum(Remaining)) throw Rule("PaymentExceedsBalance", "The collection exceeds the remaining patient balance.");
         var remaining = request.Amount;
         foreach (var invoice in invoices)
         {
             var amount = Math.Min(remaining, Remaining(invoice)); if (amount <= 0) continue;
             invoice.Payments.Add(new Payment { Amount = amount, PaymentMethod = request.Method.Value, Status = PaymentStatus.Paid, IdempotencyKey = prefix + invoice.Id });
-            invoice.PaidAmount = invoice.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentMethod != PaymentMethod.Insurance).Sum(p => p.Amount);
+            invoice.PaidAmount = invoice.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
             var covered = invoice.Payments.Where(p => p.Status == PaymentStatus.Paid).Sum(p => p.Amount) >= invoice.TotalAmount;
             invoice.Status = covered ? InvoiceStatus.Paid : InvoiceStatus.Pending;
             if (invoice.Appointment?.TreatmentPlanSession is { } session) session.PaymentStatus = covered ? PaymentStatus.Paid : PaymentStatus.Pending;

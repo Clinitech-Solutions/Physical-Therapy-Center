@@ -74,12 +74,12 @@ public class BillingService(ApplicationDbContext context) : IBillingService
         if (invoice.Status is InvoiceStatus.Cancelled or InvoiceStatus.Waived) return Reject<PaymentResponse>("CannotReceivePayment", "A waived or cancelled invoice cannot receive payment.");
         var insurerPayment = request.Method == PaymentMethod.Insurance;
         if (insurerPayment) return Reject<PaymentResponse>("ClaimSettlementRequired", "Record insurer receipts against a submitted delivered-service claim.", 409);
-        var received = invoice.Payments.Where(p => p.Status == PaymentStatus.Paid && (p.PaymentMethod == PaymentMethod.Insurance) == insurerPayment).Sum(p => p.Amount);
+        var received = invoice.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
         var liability = insurerPayment ? invoice.InsuranceAmount : invoice.PatientAmount;
         if (request.Amount > liability - received) return Reject<PaymentResponse>("PaymentExceedsBalance", "Payment cannot exceed the remaining liability of its payer.");
         var payment = new Payment { InvoiceId = invoice.Id, Amount = request.Amount, PaymentMethod = request.Method.Value, PayerType = "Patient", CollectionMethod = request.Method.Value.ToString(), IdempotencyKey = key, Status = PaymentStatus.Paid, PaymentDate = DateTime.UtcNow };
         invoice.Payments.Add(payment);
-        invoice.PaidAmount = invoice.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentMethod != PaymentMethod.Insurance).Sum(p => p.Amount);
+        invoice.PaidAmount = invoice.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
         var allPaid = invoice.Payments.Where(p => p.Status == PaymentStatus.Paid).Sum(p => p.Amount);
         invoice.Status = allPaid >= invoice.TotalAmount ? InvoiceStatus.Paid : InvoiceStatus.Pending;
         var session = invoice.TreatmentPlanSessionId != null ? await context.TreatmentPlanSessions.FindAsync(invoice.TreatmentPlanSessionId) : invoice.Appointment?.TreatmentPlanSession;
@@ -93,7 +93,7 @@ public class BillingService(ApplicationDbContext context) : IBillingService
     }
     private static InvoiceResponse MapInvoice(Invoice i)
     {
-        var paid = i.Payments.Where(p => p.Status == PaymentStatus.Paid && p.PaymentMethod != PaymentMethod.Insurance).Sum(p => p.Amount);
+        var paid = i.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
         return new() { Id = i.Id, InvoiceNumber = i.InvoiceNumber, AppointmentId = i.AppointmentId, PatientId = i.PatientId,
             PatientName = i.Patient.ApplicationUser.FullName, PatientPhone = i.Patient.ApplicationUser.PhoneNumber, InsuranceCompany = i.Patient.InsuranceCompany?.Name,
             TotalAmount = i.TotalAmount, PatientAmount = i.PatientAmount, InsuranceAmount = i.InsuranceAmount, PaidAmount = paid, RemainingAmount = Math.Max(0, i.PatientAmount - paid),
