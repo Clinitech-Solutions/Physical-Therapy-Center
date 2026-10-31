@@ -1,5 +1,9 @@
 # Doctor clinical workspace - 2026-10-31
 
+## Authorized migration applied - 2026-10-31
+
+The user's subsequent database-migration request authorized only the delivered DoctorClinicalWorkspace migration on the previously confirmed target. Following a fresh target/history/generated-SQL check, `20261031164400_DoctorClinicalWorkspace` was applied to `db56823.public.databaseasp.net / db56823`. History, zero pending migrations and clinical schema are verified; existing counts/financial totals are unchanged. Current-source clinical/profile/dashboard/invoice SQL Server reads pass. See [application report](Database/ReviewedMigrations/20261031164400_DoctorClinicalWorkspace.APPLIED.md). This update supersedes the unapplied/approval blocker below, which describes the implementation stage. No shared test records, application restart, push or deployment.
+
 ## Lifecycle and invariants
 
 Appointments retain Reception ActualCheckIn/ActualCheckOut and gain nullable TreatmentStartedAt/EndedAt and treatment actor fields. Arrival alone leaves the treatment session Pending. Doctor Start requires saved arrival, assigned access, current clinical eligibility, capacity and patient coverage. Doctor End atomically finalizes TreatmentSessionRecord, ends treatment, marks session completed, records invoice delivery and increments plan completion once. Checkout requires explicit clinical end for ordinary treatment, records departure and releases room occupancy; it does not complete or deliver again. Initial assessment handling remains separate. Existing completed clinical state cannot be reset by a new arrival.

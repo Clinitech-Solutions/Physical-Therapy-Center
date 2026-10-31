@@ -1,5 +1,9 @@
 # Booking workflow
 
+## Authorized Doctor migration applied - 2026-10-31
+
+Only `20261031164400_DoctorClinicalWorkspace` was applied to freshly confirmed `db56823.public.databaseasp.net / db56823` after exact forward-SQL review. History and clinical schema are verified with zero pending migrations; existing record counts and financial totals are unchanged. Current-source clinical/profile/dashboard/invoice service reads pass against SQL Server. See [application report](Database/ReviewedMigrations/20261031164400_DoctorClinicalWorkspace.APPLIED.md). This supersedes the pending-migration notes below. No shared test records, application restart, push or deployment.
+
 ## Doctor lifecycle and capacity update - 2026-10-31
 
 See [DOCTOR_WORKSPACE.md](DOCTOR_WORKSPACE.md) for the current clinical lifecycle and concurrency rules. Ordinary Doctor appointments permit up to two overlapping treatments in different rooms, using a whole-interval sweep shared by preview/bulk commit/reschedule/start and transaction serialization. Senior assessments stay exclusive. Arrival alone does not start treatment; Doctor End finalizes notes/progress once; Reception departure releases the room without completing again. Working-hours policy and ordinary patient payment gates remain intact. Internal Senior reassessment has no appointment or financial component. New migration 20261031164400_DoctorClinicalWorkspace is reviewed and **not applied**; older schema-status notes below are historical.

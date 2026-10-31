@@ -1,5 +1,7 @@
 # DoctorClinicalWorkspace forward SQL review
 
+Subsequent status: applied on the user's new authorization on 2026-10-31; see [application report](20261031164400_DoctorClinicalWorkspace.APPLIED.md). The original pre-application review below is preserved as history.
+
 Status: REVIEWED, NOT APPLIED. Date: 2026-10-31.
 
 Read-only confirmed target: db56823.public.databaseasp.net / db56823 (server identity S13). Latest applied migration: 20261031122754_AppointmentScheduleAudit. Exactly one pending current-source migration: 20261031164400_DoctorClinicalWorkspace. Model matches snapshot. None of the four new treatment columns exist yet. Inspection used SELECT-only queries; no shared test records or schema writes.
