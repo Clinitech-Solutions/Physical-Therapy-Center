@@ -137,7 +137,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         await service.TransitionAsync(id,AppointmentStatus.InProgress);
         var appointment=await db.Appointments.SingleAsync();var entered=appointment.ActualCheckIn;
         await service.TransitionAsync(id,AppointmentStatus.InProgress);Assert.Equal(entered,appointment.ActualCheckIn);Assert.Null(appointment.ActualCheckOut);
-        await service.TransitionAsync(id,AppointmentStatus.Completed);await service.TransitionAsync(id,AppointmentStatus.Completed);
+        await FinishClinicalForTest(id);await service.TransitionAsync(id,AppointmentStatus.Completed);await FinishClinicalForTest(id);await service.TransitionAsync(id,AppointmentStatus.Completed);
         Assert.NotNull(appointment.ActualCheckOut);Assert.Equal(1,(await db.TreatmentPlans.SingleAsync()).CompletedSessions);
     }
     [Fact] public async Task Completed_assessment_and_plan_are_saved_atomically_by_assigned_Senior()
@@ -220,7 +220,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         var current=await db.Appointments.FindAsync(receipt.Appointments[0].Id);current!.ActualCheckIn=DateTime.UtcNow.AddHours(-2);current.StartTime=DateTime.UtcNow.AddHours(-3);current.EndTime=DateTime.UtcNow.AddHours(-2);await db.SaveChangesAsync();
         var error=await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(receipt.Appointments[1].Id,AppointmentStatus.InProgress));
         Assert.Equal("Booking.ActualOccupancy",error.Code);Assert.Null(current.ActualCheckOut);
-        await service.TransitionAsync(current.Id,AppointmentStatus.Completed);
+        await FinishClinicalForTest(current.Id);await service.TransitionAsync(current.Id,AppointmentStatus.Completed);
         await service.TransitionAsync(receipt.Appointments[1].Id,AppointmentStatus.InProgress);
     }
     [Fact] public async Task A_new_assessment_requires_rescheduling_the_existing_active_appointment()

@@ -72,6 +72,10 @@ public sealed partial class BookingDatabaseTests
             db.Rooms.Add(new(){Id=2,Name="Other",Capacity=2});await db.SaveChangesAsync();
             db.Appointments.Add(new(){PatientId=conflict=="patient"?patientId:other.Id,DoctorId=conflict=="doctor"?"doctor":"senior",RoomId=conflict=="room"?1:2,StartTime=desired.UtcDateTime,EndTime=desired.UtcDateTime.AddHours(1),Status=AppointmentStatus.Pending,AppointmentType="Session"});
         }
+        if(conflict=="doctor") {
+            var third=await OtherTreatment(3,desired);
+            db.Appointments.Add(new(){PatientId=third.PatientId,DoctorId="doctor",RoomId=3,StartTime=desired.UtcDateTime,EndTime=desired.UtcDateTime.AddHours(1),Status=AppointmentStatus.Pending,AppointmentType="Session"});
+        }
         await db.SaveChangesAsync();
         Assert.DoesNotContain((await service.RescheduleAvailabilityAsync(id,CairoDate(desired.UtcDateTime))).Slots,s=>s.StartTime==slot.StartTime&&s.RoomId==1);
         var error=await Assert.ThrowsAsync<BookingRuleException>(()=>service.RescheduleSessionAsync(id,new(){OperationKey=Guid.NewGuid().ToString(),ExpectedVersion=available.Version,StartTime=desired,RoomId=1},"doctor"));

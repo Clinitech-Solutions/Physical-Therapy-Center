@@ -32,6 +32,7 @@ public record BookingPlan(int Id, string DoctorId, string DoctorName, string Tre
     int PlannedSessions, int BookedSessions, int CompletedSessions, int RemainingSessions)
 {
     public CourseFinancialSummary? Financial { get; set; }
+    public bool StaffReviewRequired { get; set; }
 }
 public record BookingContext(int PatientId, string PatientName, string Gender, string? PaymentType,
     bool HasCompletedAssessment, bool IsInsurance, bool InsuranceApproved, int? RemainingApprovedSessions,
