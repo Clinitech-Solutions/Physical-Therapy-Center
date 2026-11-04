@@ -9,6 +9,7 @@ public static class ClinicCalendar
         var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, Zone).DateTime);
         return (Start(day), Start(day.AddDays(1)));
     }
+    public static DateTime DayStart(DateOnly day) => Start(day);
     private static DateTime Start(DateOnly day)
     {
         var local = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);

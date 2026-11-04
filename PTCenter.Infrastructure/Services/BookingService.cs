@@ -282,14 +282,20 @@ public partial class BookingService(ApplicationDbContext db)
             ?? throw Rule("AppointmentNotFound", "Appointment was not found.", 404);
         RequireUpcoming(appointment);
         var originallyInsured = appointment.InsuranceFunded || await db.Invoices.AnyAsync(i => i.AppointmentId == id && i.InsuranceAmount > 0);
-        var preview = await PreviewCoreAsync(new BookingRequest { PatientId = appointment.PatientId, ClinicianId = request.ClinicianId,
+        var retainedRecovery=request.ClinicianId==(appointment.DoctorId??appointment.SeniorId)&&await HasRecoveryAssignmentAsync(appointment);
+        var seniorCoverage=retainedRecovery&&appointment.SeniorId!=null;
+        if(retainedRecovery)await ValidateRetainedRecoveryAsync(appointment,request.StartTime.UtcDateTime,request.RoomId);
+        else{var preview = await PreviewCoreAsync(new BookingRequest { PatientId = appointment.PatientId, ClinicianId = request.ClinicianId,
             RoomId = request.RoomId, StartsAt = [request.StartTime], TreatmentPlanId = appointment.TreatmentPlanSession?.TreatmentPlanId }, id, false, originallyInsured);
         if (!preview.CanSave) throw Rule("Validation", string.Join(", ", preview.Errors.Concat(preview.Appointments.SelectMany(s => s.Conflicts))), 409);
+        var fullInterval=await RecoveryConflicts(appointment,request.ClinicianId,appointment.AppointmentType=="Session"?"Doctor":"Senior",request.StartTime.UtcDateTime,request.RoomId);
+        if(fullInterval.Count>0)throw Rule("Validation",string.Join(", ",fullInterval),409);}
         var context = await ContextAsync(appointment.PatientId);
         if (context.HasCompletedAssessment != (appointment.AppointmentType == "Session")) throw Rule("AssessmentOnly", "This appointment no longer matches the patient's clinical stage.");
-        appointment.StartTime = request.StartTime.UtcDateTime; appointment.EndTime = appointment.StartTime.AddMinutes(60);
-        appointment.DoctorId = appointment.AppointmentType == "Session" ? request.ClinicianId : null;
-        appointment.SeniorId = appointment.AppointmentType == "Assessment" ? request.ClinicianId : null;
+        var duration=appointment.EndTime-appointment.StartTime;
+        appointment.StartTime = request.StartTime.UtcDateTime; appointment.EndTime = appointment.StartTime+duration;
+        appointment.DoctorId = appointment.AppointmentType == "Session" && !seniorCoverage ? request.ClinicianId : null;
+        appointment.SeniorId = appointment.AppointmentType == "Assessment" || seniorCoverage ? request.ClinicianId : null;
         appointment.RoomId = request.RoomId;
         if (appointment.TreatmentPlanSession != null) appointment.TreatmentPlanSession.SessionDate = appointment.StartTime;
         await db.SaveChangesAsync(); await transaction.CommitAsync();
@@ -382,6 +388,7 @@ public partial class BookingService(ApplicationDbContext db)
         if (appointment.Status == status) return; // A replay cannot stamp new actual times or complete a session twice.
         if (status == AppointmentStatus.InProgress && appointment.Status == AppointmentStatus.Pending)
         {
+            if (appointment.AppointmentType != "Session") await RequireNotAbsentAsync(appointment);
             if (appointment.TreatmentStartedAt != null || appointment.TreatmentEndedAt != null || appointment.ActualCheckOut != null ||
                 appointment.TreatmentPlanSession is { Status: not SessionStatus.Pending })
                 throw Rule("ClinicalStateReviewRequired", "This session has existing clinical activity. Review its history instead of reopening it through arrival.", 409);

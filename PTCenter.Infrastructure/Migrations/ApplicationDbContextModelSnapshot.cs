@@ -501,6 +501,16 @@ namespace PTCenter.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("AbsenceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasDefaultValue("Reschedule");
+
                     b.Property<string>("ActorId")
                         .IsRequired()
                         .HasMaxLength(450)
@@ -521,6 +531,28 @@ namespace PTCenter.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ClinicianName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("ConsentMethod")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ConsentReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ConsentRecordedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ContactOutcome")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<bool>("GenderException")
+                        .HasColumnType("bit");
 
                     b.Property<DateTime>("NewEnd")
                         .HasColumnType("datetime2");
@@ -543,6 +575,14 @@ namespace PTCenter.Infrastructure.Migrations
 
                     b.Property<int>("PatientId")
                         .HasColumnType("int");
+
+                    b.Property<string>("PreviousClinicianId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("PreviousClinicianName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
 
                     b.Property<DateTime>("PreviousEnd")
                         .HasColumnType("datetime2");
@@ -572,10 +612,14 @@ namespace PTCenter.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AbsenceId");
+
                     b.HasIndex("AppointmentId");
 
                     b.HasIndex("OperationKey")
                         .IsUnique();
+
+                    b.HasIndex("AppointmentId", "AbsenceId", "ChangedAt");
 
                     b.HasIndex("PatientId", "TreatmentPlanId", "ChangedAt");
 
@@ -699,11 +743,27 @@ namespace PTCenter.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HistoryJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("[]");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<string>("OperationKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Reason")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -711,7 +771,22 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<bool>("Withdrawn")
+                        .HasColumnType("bit");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("OperationKey")
+                        .IsUnique()
+                        .HasFilter("[OperationKey] IS NOT NULL");
+
+                    b.HasIndex("StartsAt", "EndsAt");
 
                     b.ToTable("DoctorAbsences");
                 });
@@ -1928,6 +2003,11 @@ namespace PTCenter.Infrastructure.Migrations
 
             modelBuilder.Entity("PTCenter.Domain.Entities.AppointmentScheduleChange", b =>
                 {
+                    b.HasOne("PTCenter.Domain.Entities.DoctorAbsence", null)
+                        .WithMany()
+                        .HasForeignKey("AbsenceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PTCenter.Domain.Entities.Appointment", null)
                         .WithMany()
                         .HasForeignKey("AppointmentId")

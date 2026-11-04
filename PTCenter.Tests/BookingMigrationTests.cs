@@ -8,6 +8,14 @@ namespace PTCenter.Tests;
 
 public class BookingMigrationTests
 {
+    [Fact] public void Absence_recovery_migration_is_additive_and_preserves_legacy_day_absences_and_finances()
+    {
+        using var db=new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=AbsenceDesignOnly;Trusted_Connection=True").Options);
+        Assert.False(db.Database.HasPendingModelChanges());
+        var sql=db.GetService<IMigrator>().GenerateScript("20261031164400_DoctorClinicalWorkspace","20261104195622_ClinicianAbsenceRecovery",MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Contains("[StartsAt] datetime2 NULL",sql);Assert.Contains("[EndsAt] datetime2 NULL",sql);Assert.Contains("DEFAULT N'[]'",sql);Assert.Contains("[ConsentRecordedAt]",sql);
+        foreach(var forbidden in new[]{"DROP TABLE","DROP COLUMN","ALTER COLUMN","UPDATE [","DELETE FROM","TRUNCATE","ON DELETE CASCADE","INSERT INTO [Invoices]","INSERT INTO [Payments]"})Assert.DoesNotContain(forbidden,sql);
+    }
     [Fact] public void Doctor_migration_is_additive_and_does_not_infer_history_or_touch_financial_records()
     {
         using var db=new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=DoctorDesignOnly;Trusted_Connection=True").Options);
