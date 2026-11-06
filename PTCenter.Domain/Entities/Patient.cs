@@ -5,6 +5,8 @@ public class Patient : BaseEntity
 {
     public int Id { get; set; }
     public string ApplicationUserId { get; set; } = null!;
+    public string? RegistrationOperationKey { get; set; }
+    public string? RegistrationRequestHash { get; set; }
     public string? PaymentType { get; set; }
     public string? EmergencyContact { get; set; }
     public int? InsuranceCompanyId { get; set; }

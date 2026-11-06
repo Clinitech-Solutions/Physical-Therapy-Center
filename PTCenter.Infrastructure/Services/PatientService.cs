@@ -1,4 +1,4 @@
-﻿
+
 using System.Security.Cryptography;
 using Mapster;
 using Microsoft.AspNetCore.Identity;
@@ -16,7 +16,8 @@ namespace PTCenter.Infrastructure.Services;
 public class PatientService(
     ApplicationDbContext context,
     UserManager<ApplicationUser> userManager,
-    ILogger<PatientService> logger)
+    ILogger<PatientService> logger,
+    IPatientUsernameGenerator usernames)
     : IPatientService
 {
     private readonly ApplicationDbContext _context = context;
@@ -25,137 +26,71 @@ public class PatientService(
 
     // ========================= ADD PATIENT =========================
 
-    public async Task<Result<PatientResponse>> AddAsync(
-        CreatePatientRequest request)
+    public async Task<Result<PatientResponse>> AddAsync(CreatePatientRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.UserName))
-            return Result.Failure<PatientResponse>(
-                PatientErrors.RegistrationFailed);
-
-        var userName = request.UserName.Trim();
-
-        var existingUser = await _userManager.FindByNameAsync(userName);
-
-        if (existingUser is not null)
-            return Result.Failure<PatientResponse>(
-                PatientErrors.PatientAlreadyExists);
-
-        if (request.InsuranceCompanyId.HasValue)
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        var operation = request.IdempotencyKey;
+        if (operation != null && (string.IsNullOrWhiteSpace(operation) || operation.Length > 100))
+            return Result.Failure<PatientResponse>(new("Patient.RegistrationKey", "Invalid registration operation key.", 400));
+        var fingerprint = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new {
+            Name=request.FullName.Trim(), Phone=request.PhoneNumber.Trim(), request.Gender, request.BirthDate, Email=email,
+            request.PaymentType, request.EmergencyContact, request.InsuranceCompanyId, request.InsuranceDetails
+        }))));
+        for (var attempt=0; attempt<5; attempt++)
         {
-            var companyExists = await _context.InsuranceCompanies
-                .AnyAsync(x => x.Id == request.InsuranceCompanyId.Value);
-
-            if (!companyExists)
-                return Result.Failure<PatientResponse>(
-                    PatientErrors.InsuranceCompanyNotFound);
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            await ClinicMutationLock.AcquireAsync(_context);
+            if (operation != null)
+            {
+                var replay = await _context.Patients.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(p=>p.RegistrationOperationKey==operation);
+                if (replay != null)
+                {
+                    if (replay.IsDeleted || replay.RegistrationRequestHash != fingerprint)
+                        return Result.Failure<PatientResponse>(new("Patient.RegistrationConflict", "This operation belongs to a different or deleted registration. Review the saved patient before retrying.", 409));
+                    return Result.Success((await GetPatientResponseAsync(replay.Id))!);
+                }
+            }
+            if (request.InsuranceCompanyId is int company && !await _context.InsuranceCompanies.AnyAsync(c=>c.Id==company))
+                return Result.Failure<PatientResponse>(PatientErrors.InsuranceCompanyNotFound);
+            if (email != null && await _userManager.FindByEmailAsync(email) != null)
+                return Result.Failure<PatientResponse>(PatientErrors.PatientAlreadyExists);
+            var userName = usernames.Next();
+            if (await _userManager.FindByNameAsync(userName) != null) continue;
+            var user = new ApplicationUser { UserName=userName, Email=email, PhoneNumber=request.PhoneNumber.Trim(),
+                FullName=request.FullName.Trim(), Gender=request.Gender, BirthDate=request.BirthDate, EmailConfirmed=true };
+            try
+            {
+                var created = await _userManager.CreateAsync(user, GeneratePassword());
+                if (!created.Succeeded)
+                {
+                    _context.Entry(user).State = EntityState.Detached;
+                    if (created.Errors.Any(e=>e.Code=="DuplicateUserName")) continue;
+                    LogIdentityErrors("Create patient", userName, created.Errors);
+                    return Result.Failure<PatientResponse>(PatientErrors.RegistrationFailed);
+                }
+                var role = await _userManager.AddToRoleAsync(user,"Patient");
+                if (!role.Succeeded) return Result.Failure<PatientResponse>(PatientErrors.FailedToAssignRole);
+                var patient = new Patient { ApplicationUser=user, PaymentType=request.PaymentType, EmergencyContact=request.EmergencyContact,
+                    InsuranceCompanyId=request.InsuranceCompanyId, InsuranceDetails=request.InsuranceDetails?.Adapt<InsuranceDetails>(),
+                    RegistrationOperationKey=operation, RegistrationRequestHash=operation == null ? null : fingerprint };
+                _context.Patients.Add(patient); await _context.SaveChangesAsync();
+                // Load the response inside the transaction; a read failure must not encourage a second registration.
+                var response = (await GetPatientResponseAsync(patient.Id))!;
+                await transaction.CommitAsync(); return Result.Success(response);
+            }
+            catch (DbUpdateException error) when (UniqueCollision(error))
+            {
+                await transaction.RollbackAsync(); _context.ChangeTracker.Clear();
+                // Identity username uniqueness and the registration key are database-enforced.
+                // A concurrent winning operation is recovered at the top of the next attempt.
+            }
         }
-
-        // CreatePatientRequest does not contain an email in this version,
-        // so the service generates a placeholder email.
-        var generatedEmail = $"{userName}@example.com";
-
-        var existingEmail = await _userManager.FindByEmailAsync(generatedEmail);
-
-        if (existingEmail is not null)
-            return Result.Failure<PatientResponse>(
-                PatientErrors.PatientAlreadyExists);
-
-        await using var transaction =
-            await _context.Database.BeginTransactionAsync();
-
-        ApplicationUser? user = null;
-
-        try
-        {
-            user = new ApplicationUser
-            {
-                UserName = userName,
-                Email = generatedEmail,
-                PhoneNumber = request.PhoneNumber?.Trim(),
-                FullName = request.FullName.Trim(),
-                Gender = request.Gender,
-                BirthDate = request.BirthDate,
-
-                EmailConfirmed = true
-            };
-
-            var password = GeneratePassword();
-            var createResult = await _userManager.CreateAsync(user, password);
-
-            if (!createResult.Succeeded)
-            {
-                LogIdentityErrors(
-                    "Create patient user",
-                    userName,
-                    createResult.Errors);
-
-                await transaction.RollbackAsync();
-
-                return Result.Failure<PatientResponse>(
-                    PatientErrors.RegistrationFailed);
-            }
-
-            // Assign the Patient role.
-            // The Patient role must already exist in the database.
-            var roleResult = await _userManager.AddToRoleAsync(
-                user,
-                "Patient");
-
-            if (!roleResult.Succeeded)
-            {
-                LogIdentityErrors(
-                    "Assign Patient role",
-                    userName,
-                    roleResult.Errors);
-
-                await transaction.RollbackAsync();
-
-                return Result.Failure<PatientResponse>(
-                    PatientErrors.FailedToAssignRole);
-            }
-
-            var patient = request.Adapt<Patient>();
-
-            patient.ApplicationUserId = user.Id;
-
-            // Uses InsuranceDetailsResponse as requested.
-            if (request.InsuranceDetails is not null)
-            {
-                patient.InsuranceDetails =
-                    request.InsuranceDetails.Adapt<InsuranceDetails>();
-            }
-
-            await _context.Patients.AddAsync(patient);
-            await _context.SaveChangesAsync();
-
-            await transaction.CommitAsync();
-
-            var response = await GetPatientResponseAsync(patient.Id);
-
-            if (response is null)
-            {
-                _logger.LogError(
-                    "Patient {PatientId} was created but could not be loaded.",
-                    patient.Id);
-
-                return Result.Failure<PatientResponse>(
-                    PatientErrors.RegistrationFailed);
-            }
-
-            return Result.Success(response);
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-
-            _logger.LogError(
-                ex,
-                "Unexpected error while registering patient {UserName}.",
-                userName);
-
-            throw;
-        }
+        return Result.Failure<PatientResponse>(new("Patient.RegistrationConflict", "Registration changed concurrently. Retry the original operation or check the patient list.", 409));
     }
+
+    private static bool UniqueCollision(DbUpdateException error) =>
+        error.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } ||
+        error.InnerException?.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) == true;
 
     // ========================= GET ALL PATIENTS =========================
 

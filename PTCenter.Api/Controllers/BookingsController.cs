@@ -64,6 +64,12 @@ public class BookingsController(BookingService service, PTCenter.Infrastructure.
     [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
     public Task<IActionResult> CompleteAssessment(CompleteAssessmentRequest request) => Execute(() => service.CompleteAssessmentAsync(request,
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", User.IsInRole("Ceo") || User.IsInRole("Admin") || User.IsInRole("Owner")));
+    [HttpGet("assessments/tasks")]
+    [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
+    public Task<IActionResult> AssessmentTasks() => Execute(() => service.AssessmentTasksAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)??"", User.IsInRole("Ceo")||User.IsInRole("Admin")||User.IsInRole("Owner")));
+    [HttpGet("assessments/appointments/{id:int}")]
+    [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
+    public Task<IActionResult> AssessmentWorkspace(int id) => Execute(() => service.AssessmentWorkspaceAsync(id,User.FindFirstValue(ClaimTypes.NameIdentifier)??"", User.IsInRole("Ceo")||User.IsInRole("Admin")||User.IsInRole("Owner")));
     [HttpPost("assessments/{id:int}/complete")]
     [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
     public Task<IActionResult> CompleteExisting(int id) => Execute(async () => { await service.CompleteExistingAssessmentAsync(id,

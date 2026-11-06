@@ -1243,6 +1243,14 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Property<string>("PaymentType")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("RegistrationOperationKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("RegistrationRequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -1254,6 +1262,10 @@ namespace PTCenter.Infrastructure.Migrations
                     b.HasIndex("ApplicationUserId");
 
                     b.HasIndex("InsuranceCompanyId");
+
+                    b.HasIndex("RegistrationOperationKey")
+                        .IsUnique()
+                        .HasFilter("[RegistrationOperationKey] IS NOT NULL");
 
                     b.ToTable("Patients");
                 });

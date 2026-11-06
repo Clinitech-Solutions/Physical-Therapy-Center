@@ -65,7 +65,10 @@ public partial class BookingService(ApplicationDbContext db)
                     used.Count(a => a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow),
                     sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed),
                     Math.Max(0, p.NumberOfSessions - used.Select(a => a.TreatmentPlanSessionId).Distinct().Count() -
-                        sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed && !used.Any(a => a.TreatmentPlanSessionId == s.Id))));
+                        sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed && !used.Any(a => a.TreatmentPlanSessionId == s.Id)))) {
+                            FrequencyPerWeek = p.FrequencyPerWeek,
+                            BookedStartsAt = used.Where(a=>a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow).Select(a=>a.StartTime).OrderBy(t=>t).ToList()
+                        };
             }).ToList()) { ApprovedSessions = info?.ApprovedSessions };
         var finance = new CourseFinanceService(db);
         var reviews = await db.ReassessmentRequests.AsNoTracking().Where(r => r.PatientId == patientId && r.ReviewRequired).Select(r => new {r.TreatmentPlanId,r.RevisedPlanId}).ToListAsync();
@@ -411,8 +414,7 @@ public partial class BookingService(ApplicationDbContext db)
                 throw Rule("TreatmentNotFinished", "The assigned Doctor must explicitly end treatment before patient departure.", 409);
             appointment.ActualCheckOut = DateTime.UtcNow;
             if (appointment.TreatmentPlanSession is { } session) session.CheckOut = appointment.ActualCheckOut;
-            if (appointment.AppointmentType != "Session")
-                foreach (var invoice in await db.Invoices.Where(i => i.AppointmentId == id).ToListAsync()) invoice.DeliveredAt = appointment.ActualCheckOut;
+            // Physical departure does not sign or deliver an assessment. Clinical signoff owns DeliveredAt.
         }
         else if ((status == AppointmentStatus.Cancelled || status == AppointmentStatus.NoShow) && appointment.Status == AppointmentStatus.Pending) { }
         else throw Rule("InvalidTransition", "This status transition is not allowed. Check-in and check-out are separate staff actions.", 409);
@@ -434,28 +436,50 @@ public partial class BookingService(ApplicationDbContext db)
         var patient = await PatientAsync(appointment.PatientId);
         if (!(await CliniciansForAsync(patient, "Doctor")).Any(c => c.Id == request.DoctorId)) throw Rule("ClinicianEligibility", "Select an eligible Doctor matching the patient's gender.");
         var existing = await db.Assessments.Include(a => a.TreatmentPlan).SingleOrDefaultAsync(a => a.AppointmentId == appointment.Id);
-        if (existing != null)
+        if (existing?.CompletedAt != null)
         {
             var saved = existing.TreatmentPlan;
             if (saved == null || existing.Diagnosis != request.Diagnosis.Trim() || saved.DoctorId != request.DoctorId || saved.NumberOfSessions != request.NumberOfSessions || saved.FrequencyPerWeek != request.FrequencyPerWeek || saved.Exercises != request.Exercises || saved.TreatmentType != request.TreatmentType)
                 throw Rule("AssessmentAlreadyCompleted", "This assessment has already been completed with different details.", 409);
             return (await ContextAsync(appointment.PatientId)).Plans.Single(p => p.Id == saved.Id);
         }
-        var assessment = new Assessment { AppointmentId = appointment.Id, PatientId = patient.Id, SeniorId = appointment.SeniorId!,
-            Diagnosis = request.Diagnosis.Trim(), ConditionType = request.TreatmentType, Priority = "Routine", CompletedAt = DateTime.UtcNow, AssessmentDate = DateTime.UtcNow };
-        var plan = new TreatmentPlan { Assessment = assessment, DoctorId = request.DoctorId, NumberOfSessions = request.NumberOfSessions,
-            FrequencyPerWeek = request.FrequencyPerWeek, TreatmentType = request.TreatmentType, Exercises = request.Exercises, Status = StatusPlan.Active };
-        for (var i = 1; i <= request.NumberOfSessions; i++) plan.Sessions.Add(new TreatmentPlanSession { SessionNumber = i });
-        db.TreatmentPlans.Add(plan);
+        var assessment = existing ?? new Assessment { AppointmentId = appointment.Id, PatientId = patient.Id, SeniorId = appointment.SeniorId!, CreatedBy = actor };
+        assessment.Diagnosis = request.Diagnosis.Trim(); assessment.ConditionType = request.TreatmentType;
+        assessment.Priority = "Routine"; assessment.CompletedAt = DateTime.UtcNow; assessment.AssessmentDate = DateTime.UtcNow; assessment.UpdatedBy = actor;
+        var plan = existing?.TreatmentPlan;
+        if (plan != null)
+        {
+            await db.Entry(plan).Collection(p=>p.Sessions).LoadAsync();
+            if (plan.Sessions.Any(s=>s.SessionNumber>request.NumberOfSessions)) throw Rule("DraftPlanReview", "Review the allocated draft sessions before reducing the prescription.",409);
+        }
+        else { plan = new TreatmentPlan { Assessment=assessment, CreatedBy=actor }; db.TreatmentPlans.Add(plan); }
+        plan.DoctorId=request.DoctorId; plan.NumberOfSessions=request.NumberOfSessions; plan.FrequencyPerWeek=request.FrequencyPerWeek;
+        plan.TreatmentType=request.TreatmentType; plan.Exercises=request.Exercises; plan.Status=StatusPlan.Active; plan.UpdatedBy=actor;
+        for (var i = 1; i <= request.NumberOfSessions; i++) if(!plan.Sessions.Any(s=>s.SessionNumber==i)) plan.Sessions.Add(new TreatmentPlanSession { SessionNumber = i });
+        await MarkAssessmentDeliveredAsync(appointment.Id, assessment.CompletedAt!.Value);
         await db.SaveChangesAsync(); await transaction.CommitAsync();
         return (await ContextAsync(patient.Id)).Plans.Single(p => p.Id == plan.Id);
     }
 
     public async Task CompleteExistingAssessmentAsync(int id, string actor, bool supervisor)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(db);
         var assessment = await db.Assessments.SingleOrDefaultAsync(a => a.Id == id) ?? throw Rule("AssessmentNotFound", "Assessment was not found.", 404);
         if (!supervisor && assessment.SeniorId != actor) throw Rule("AssessmentOwner", "Only the assigned Senior can sign off this assessment.", 403);
+        if (assessment.AppointmentId is int appointmentId)
+        {
+            var appointment = await db.Appointments.SingleAsync(a=>a.Id==appointmentId);
+            if (!supervisor && appointment.SeniorId != actor) throw Rule("AssessmentOwner", "Only the assigned Senior can sign off this assessment.", 403);
+            if (appointment.ActualCheckIn == null || appointment.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow)
+                throw Rule("AssessmentNotStarted", "Record arrival before clinical signoff.", 409);
+        }
         if (string.IsNullOrWhiteSpace(assessment.Diagnosis)) throw Rule("ClinicalDetailsRequired", "A saved diagnosis is required before completion.");
-        assessment.CompletedAt ??= DateTime.UtcNow; await db.SaveChangesAsync();
+        if (assessment.CompletedAt == null) {
+            assessment.CompletedAt = DateTime.UtcNow; assessment.UpdatedBy = actor;
+            if(assessment.AppointmentId is int signedAppointment) await MarkAssessmentDeliveredAsync(signedAppointment,assessment.CompletedAt.Value);
+            await db.SaveChangesAsync();
+        }
+        await transaction.CommitAsync();
     }
 }

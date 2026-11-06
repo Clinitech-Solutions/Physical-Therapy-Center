@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PTCenter.Application.Abstractions;
 using PTCenter.Application.Contracts.TreatmentPlans;
 using PTCenter.Application.Interfaces;
@@ -16,15 +16,20 @@ public class TreatmentPlanService(
     private readonly ApplicationDbContext _context = context;
 
     public async Task<Result<TreatmentPlanResponse>> AddAsync(
-        CreateTreatmentPlanRequest request)
+        CreateTreatmentPlanRequest request, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         // Check Assessment
-        var assessmentExists = await _context.Assessments
-            .AnyAsync(x => x.Id == request.AssessmentId);
+        var assessment = await _context.Assessments.SingleOrDefaultAsync(x=>x.Id==request.AssessmentId);
+        var assessmentExists = assessment != null;
 
         if (!assessmentExists)
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.AssessmentNotFound);
+
+        var denied = await new LegacyClinicalRules(_context).AssessmentAsync(assessment!, actor, supervisor, false);
+        if (denied != null) return Result.Failure<TreatmentPlanResponse>(denied);
 
         // One TreatmentPlan per Assessment
         var treatmentPlanExists = await _context.TreatmentPlans
@@ -35,25 +40,25 @@ public class TreatmentPlanService(
                 TreatmentPlanErrors.TreatmentPlanAlreadyExists);
 
         // Check Doctor
-        var doctorExists = await _context.Users
-            .AnyAsync(x => x.Id == request.DoctorId);
+        var doctorExists = await new LegacyClinicalRules(_context).EligibleAsync(request.DoctorId, assessment!.PatientId, "Doctor");
 
         if (!doctorExists)
             return Result.Failure<TreatmentPlanResponse>(
-                TreatmentPlanErrors.DoctorNotFound);
+                new("Clinical.DoctorEligibility", "Select an eligible Doctor matching the patient gender.", 400));
 
         // Validate Number Of Sessions
-        if (request.NumberOfSessions <= 0)
+        if (request.NumberOfSessions is < 1 or > 200)
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.InvalidNumberOfSessions);
 
         // Validate Frequency
-        if (request.FrequencyPerWeek <= 0)
+        if (request.FrequencyPerWeek is < 1 or > 7)
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.InvalidFrequency);
 
         var treatmentPlan = new TreatmentPlan
         {
+            CreatedBy = actor,
             AssessmentId = request.AssessmentId,
             DoctorId = request.DoctorId,
             NumberOfSessions = request.NumberOfSessions,
@@ -67,6 +72,7 @@ public class TreatmentPlanService(
         await _context.TreatmentPlans.AddAsync(treatmentPlan);
         await _context.SaveChangesAsync();
 
+        await transaction.CommitAsync();
         return await GetByIdAsync(treatmentPlan.Id);
     }
 
@@ -104,8 +110,10 @@ public class TreatmentPlanService(
 
     public async Task<Result<TreatmentPlanResponse>> UpdateAsync(
         int id,
-        UpdateTreatmentPlanRequest request)
+        UpdateTreatmentPlanRequest request, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         var treatmentPlan = await _context.TreatmentPlans
             .Include(x => x.Sessions)
             .FirstOrDefaultAsync(x => x.Id == id);
@@ -114,21 +122,23 @@ public class TreatmentPlanService(
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.TreatmentPlanNotFound);
 
+        var denied = await new LegacyClinicalRules(_context).PlanAsync(id, actor, supervisor, true);
+        if (denied != null) return Result.Failure<TreatmentPlanResponse>(denied);
         // Check Doctor
-        var doctorExists = await _context.Users
-            .AnyAsync(x => x.Id == request.DoctorId);
+        var patientId = await _context.Assessments.Where(a=>a.Id==treatmentPlan.AssessmentId).Select(a=>a.PatientId).SingleAsync();
+        var doctorExists = await new LegacyClinicalRules(_context).EligibleAsync(request.DoctorId, patientId, "Doctor");
 
         if (!doctorExists)
             return Result.Failure<TreatmentPlanResponse>(
-                TreatmentPlanErrors.DoctorNotFound);
+                new("Clinical.DoctorEligibility", "Select an eligible Doctor matching the patient gender.", 400));
 
         // Validate Number Of Sessions
-        if (request.NumberOfSessions <= 0)
+        if (request.NumberOfSessions is < 1 or > 200)
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.InvalidNumberOfSessions);
 
         // Validate Frequency
-        if (request.FrequencyPerWeek <= 0)
+        if (request.FrequencyPerWeek is < 1 or > 7)
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.InvalidFrequency);
 
@@ -140,6 +150,7 @@ public class TreatmentPlanService(
             return Result.Failure<TreatmentPlanResponse>(
                 TreatmentPlanErrors.SessionsAlreadyCompleted);
 
+        treatmentPlan.UpdatedBy = actor;
         treatmentPlan.DoctorId = request.DoctorId;
         treatmentPlan.NumberOfSessions = request.NumberOfSessions;
         treatmentPlan.FrequencyPerWeek = request.FrequencyPerWeek;
@@ -152,11 +163,14 @@ public class TreatmentPlanService(
 
         await _context.SaveChangesAsync();
 
+        await transaction.CommitAsync();
         return await GetByIdAsync(id);
     }
 
-    public async Task<Result> DeleteAsync(int id)
+    public async Task<Result> DeleteAsync(int id, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         var treatmentPlan = await _context.TreatmentPlans
             .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -164,13 +178,17 @@ public class TreatmentPlanService(
             return Result.Failure(
                 TreatmentPlanErrors.TreatmentPlanNotFound);
 
+        var denied = await new LegacyClinicalRules(_context).PlanAsync(id, actor, supervisor, true);
+        if (denied != null) return Result.Failure(denied);
+        treatmentPlan.DeletedBy = actor;
         try
         {
             _context.TreatmentPlans.Remove(treatmentPlan);
 
             await _context.SaveChangesAsync();
 
-            return Result.Success();
+            await transaction.CommitAsync();
+        return Result.Success();
         }
         catch
         {

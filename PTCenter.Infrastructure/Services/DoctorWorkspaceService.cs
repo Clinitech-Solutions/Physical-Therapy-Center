@@ -26,8 +26,7 @@ public class DoctorWorkspaceService(ApplicationDbContext db, BookingService book
     public async Task<DoctorScheduleResponse> ScheduleAsync(DateOnly date, string actor, bool supervisor, string? doctorId = null)
     {
         if (!supervisor && doctorId != null && doctorId != actor) throw new ClinicalRuleException("Doctor.AccessDenied", "Only your assigned schedule is available.", 403);
-        var noon = date.ToDateTime(new(12, 0));
-        var range = ClinicCalendar.UtcDay(new DateTimeOffset(noon, ClinicCalendar.Zone.GetUtcOffset(noon)));
+        var range = ClinicCalendar.UtcDay(date);
         var query = Visits.AsNoTracking().Where(a => a.AppointmentType == "Session");
         if (!supervisor || doctorId != null) query = query.Where(a => a.DoctorId == (supervisor ? doctorId : actor) || a.SeniorId == (supervisor ? doctorId : actor));
         var appointments = await query.Where(a => a.StartTime >= range.Start && a.StartTime < range.End).OrderBy(a => a.StartTime).ThenBy(a => a.Id).ToListAsync();

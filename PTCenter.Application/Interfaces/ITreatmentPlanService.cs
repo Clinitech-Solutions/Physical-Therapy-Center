@@ -1,4 +1,4 @@
-﻿using PTCenter.Application.Abstractions;
+using PTCenter.Application.Abstractions;
 using PTCenter.Application.Contracts.TreatmentPlans;
 
 
@@ -7,7 +7,7 @@ namespace PTCenter.Application.Interfaces;
 public interface ITreatmentPlanService
 {
     Task<Result<TreatmentPlanResponse>> AddAsync(
-        CreateTreatmentPlanRequest request);
+        CreateTreatmentPlanRequest request, string actor, bool supervisor);
 
     Task<Result<TreatmentPlanResponse>> GetByIdAsync(
         int id);
@@ -16,8 +16,8 @@ public interface ITreatmentPlanService
 
     Task<Result<TreatmentPlanResponse>> UpdateAsync(
         int id,
-        UpdateTreatmentPlanRequest request);
+        UpdateTreatmentPlanRequest request, string actor, bool supervisor);
 
     Task<Result> DeleteAsync(
-        int id);
+        int id, string actor, bool supervisor);
 }

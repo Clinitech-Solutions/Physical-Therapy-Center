@@ -31,6 +31,8 @@ public record BookingPatientOption(int Id, string FullName, string PhoneNumber, 
 public record BookingPlan(int Id, string DoctorId, string DoctorName, string TreatmentType,
     int PlannedSessions, int BookedSessions, int CompletedSessions, int RemainingSessions)
 {
+    public int FrequencyPerWeek { get; init; }
+    public List<DateTime> BookedStartsAt { get; init; } = [];
     public CourseFinancialSummary? Financial { get; set; }
     public bool StaffReviewRequired { get; set; }
 }
@@ -69,3 +71,7 @@ public class CompleteAssessmentRequest
     public string TreatmentType { get; set; } = "PhysicalTherapy";
     public string? Exercises { get; set; }
 }
+
+public record AssessmentWorkspace(int AppointmentId, int PatientId, DateTime StartTime, DateTime? ArrivedAt, DateTime? DepartedAt,
+    DateTime? CompletedAt, string Diagnosis, string? Notes, int NumberOfSessions, int FrequencyPerWeek, string? DoctorId,
+    string? Exercises, string TreatmentType);

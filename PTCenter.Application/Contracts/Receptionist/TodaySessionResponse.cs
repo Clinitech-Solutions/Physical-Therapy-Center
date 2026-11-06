@@ -7,6 +7,7 @@ namespace PTCenter.Application.Contracts.Receptionist
          public class TodaySessionResponse
         {
             public int Id { get; set; }
+            public bool AssessmentCompleted { get; set; }
             public int PatientId { get; set; }
             public string? DoctorId { get; set; }
             public string? SeniorId { get; set; }

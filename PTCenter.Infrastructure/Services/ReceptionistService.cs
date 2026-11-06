@@ -22,7 +22,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
         var todaysSessionsCount = await todaysSessionsQuery.CountAsync();
 
         var completedSessionsCount = await todaysSessionsQuery
-            .Where(x => x.Status == AppointmentStatus.Completed)
+            .Where(x => x.Status == AppointmentStatus.Completed && (x.AppointmentType!="Assessment" || _context.Assessments.Any(a=>a.AppointmentId==x.Id && a.CompletedAt!=null)))
             .CountAsync();
 
         var pendingPaymentsCount = await _context.Invoices
@@ -61,7 +61,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
         if (request.PageNumber < 1) request.PageNumber = 1;
         if (request.PageSize < 1) request.PageSize = 10;
 
-        var (dayStart, dayEnd) = ClinicCalendar.UtcDay((clock ?? TimeProvider.System).GetUtcNow());
+        var (dayStart, dayEnd) = request.Date is DateOnly day ? ClinicCalendar.UtcDay(day) : ClinicCalendar.UtcDay((clock ?? TimeProvider.System).GetUtcNow());
 
         var query = _context.Appointments
             .Include(x => x.Patient)
@@ -82,7 +82,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
 
         if (!string.IsNullOrWhiteSpace(request.DoctorId))
         {
-            query = query.Where(x => x.DoctorId == request.DoctorId);
+            query = query.Where(x => x.DoctorId == request.DoctorId || x.SeniorId == request.DoctorId);
         }
 
         if (request.RoomId.HasValue)
@@ -102,6 +102,7 @@ public class ReceptionistService(ApplicationDbContext context, BookingService bo
                 Id = x.Id,
                 PatientId = x.PatientId, DoctorId = x.DoctorId, SeniorId = x.SeniorId, RoomId = x.RoomId,
                 AppointmentType = x.AppointmentType, StartTime = x.StartTime, EndTime = x.EndTime,
+                AssessmentCompleted = _context.Assessments.Any(a=>a.AppointmentId==x.Id && a.CompletedAt!=null),
                 ActualCheckIn = x.ActualCheckIn, ActualCheckOut = x.ActualCheckOut, TreatmentStartedAt = x.TreatmentStartedAt, TreatmentEndedAt = x.TreatmentEndedAt,
                 Time = x.StartTime.ToString("hh:mm tt"),
                 PatientName = x.Patient.ApplicationUser.FullName,

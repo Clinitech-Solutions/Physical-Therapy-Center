@@ -11,6 +11,7 @@ namespace PTCenter.Application.Contracts.Appointments
         public string? Search { get; set; }
         public string? DoctorId { get; set; }
         public int? RoomId { get; set; }
+        /// <summary>Clinic-local calendar date. Prefer YYYY-MM-DD; legacy ISO date labels ignore the time component.</summary>
         public DateTime? Date { get; set; }
         public AppointmentStatus? Status { get; set; } // أضف هذه لفلترة الحالات في جدول الحجوزات
     }

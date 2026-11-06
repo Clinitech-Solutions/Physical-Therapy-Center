@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PTCenter.Application.Abstractions;
 using PTCenter.Application.Contracts.Assessments;
 using PTCenter.Application.Interfaces;
@@ -15,8 +15,16 @@ public class AssessmentService(
     private readonly ApplicationDbContext _context = context;
 
     public async Task<Result<AssessmentResponse>> AddAsync(
-        CreateAssessmentRequest request)
+        CreateAssessmentRequest request, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
+        if (!LegacyClinicalRules.Owns(request.SeniorId, actor, supervisor))
+            return Result.Failure<AssessmentResponse>(LegacyClinicalRules.Denied);
+        var appointment = await _context.Appointments.Where(a=>a.PatientId==request.PatientId && a.SeniorId==request.SeniorId && a.AppointmentType=="Assessment" &&
+            a.Status!=PTCenter.Domain.Entities.Enums.AppointmentStatus.Cancelled && a.Status!=PTCenter.Domain.Entities.Enums.AppointmentStatus.NoShow &&
+            !_context.Assessments.Any(x=>x.AppointmentId==a.Id)).OrderByDescending(a=>a.StartTime).FirstOrDefaultAsync();
+        if (!supervisor && appointment == null) return Result.Failure<AssessmentResponse>(LegacyClinicalRules.Denied);
         if (string.IsNullOrWhiteSpace(request.Diagnosis))
         {
             return Result.Failure<AssessmentResponse>(
@@ -44,8 +52,7 @@ public class AssessmentService(
                 AssessmentErrors.PatientNotFound);
         }
 
-        var seniorExists = await _context.Users
-            .AnyAsync(x => x.Id == request.SeniorId);
+        var seniorExists = await new LegacyClinicalRules(_context).EligibleAsync(request.SeniorId, request.PatientId, "Senior");
 
         if (!seniorExists)
         {
@@ -55,6 +62,8 @@ public class AssessmentService(
 
         var assessment = new Assessment
         {
+            AppointmentId = appointment?.Id,
+            CreatedBy = actor,
             PatientId = request.PatientId,
             SeniorId = request.SeniorId,
             Diagnosis = request.Diagnosis,
@@ -69,6 +78,7 @@ public class AssessmentService(
 
         await _context.SaveChangesAsync();
 
+        await transaction.CommitAsync();
         return await GetByIdAsync(assessment.Id);
     }
 
@@ -123,8 +133,10 @@ public class AssessmentService(
 
     public async Task<Result<AssessmentResponse>> UpdateAsync(
         int id,
-        UpdateAssessmentRequest request)
+        UpdateAssessmentRequest request, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         if (string.IsNullOrWhiteSpace(request.Diagnosis))
         {
             return Result.Failure<AssessmentResponse>(
@@ -152,8 +164,10 @@ public class AssessmentService(
                 AssessmentErrors.AssessmentNotFound);
         }
 
-        var seniorExists = await _context.Users
-            .AnyAsync(x => x.Id == request.SeniorId);
+        var denied = await new LegacyClinicalRules(_context).AssessmentAsync(assessment, actor, supervisor, true);
+        if (denied != null) return Result.Failure<AssessmentResponse>(denied);
+        if (!supervisor && request.SeniorId != assessment.SeniorId) return Result.Failure<AssessmentResponse>(LegacyClinicalRules.Denied);
+        var seniorExists = await new LegacyClinicalRules(_context).EligibleAsync(request.SeniorId, assessment.PatientId, "Senior");
 
         if (!seniorExists)
         {
@@ -161,6 +175,7 @@ public class AssessmentService(
                 AssessmentErrors.SeniorNotFound);
         }
 
+        assessment.UpdatedBy = actor;
         assessment.SeniorId = request.SeniorId;
         assessment.Diagnosis = request.Diagnosis;
         assessment.ConditionType = request.ConditionType;
@@ -171,11 +186,14 @@ public class AssessmentService(
 
         await _context.SaveChangesAsync();
 
+        await transaction.CommitAsync();
         return await GetByIdAsync(id);
     }
 
-    public async Task<Result> DeleteAsync(int id)
+    public async Task<Result> DeleteAsync(int id, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         var assessment = await _context.Assessments
             .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -185,13 +203,18 @@ public class AssessmentService(
                 AssessmentErrors.AssessmentNotFound);
         }
 
+        var denied = await new LegacyClinicalRules(_context).AssessmentAsync(assessment, actor, supervisor, true);
+        if (denied != null) return Result.Failure(denied);
+        if (await _context.TreatmentPlans.AnyAsync(p=>p.AssessmentId==id)) return Result.Failure(LegacyClinicalRules.Signed);
+        assessment.DeletedBy = actor;
         try
         {
             _context.Assessments.Remove(assessment);
 
             await _context.SaveChangesAsync();
 
-            return Result.Success();
+            await transaction.CommitAsync();
+        return Result.Success();
         }
         catch
         {

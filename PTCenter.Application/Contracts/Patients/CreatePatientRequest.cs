@@ -6,9 +6,12 @@ namespace PTCenter.Application.Contracts.Patients;
 
 public class CreatePatientRequest
 {
-    [Required]
-    [StringLength(50, MinimumLength = 3)]
-    public string UserName { get; set; } = string.Empty;
+    // Usernames are internal Identity identifiers, never reception input.
+    [EmailAddress, StringLength(254)]
+    public string? Email { get; set; }
+
+    [StringLength(100, MinimumLength = 1)]
+    public string? IdempotencyKey { get; set; }
 
     [Required]
     [StringLength(150, MinimumLength = 2)]

@@ -208,9 +208,9 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         var session=await db.TreatmentPlanSessions.SingleAsync(s=>s.Id==receipt.Appointments[0].TreatmentPlanSessionId);
         var legacy=new TreatmentPlanSessionService(db);
         var request=new PTCenter.Application.Contracts.TreatmentPlanSession.UpdateTreatmentPlanSessionRequest{SessionNumber=session.SessionNumber,SessionDate=session.SessionDate,Status=SessionStatus.Pending,PaymentStatus=PaymentStatus.PackageCovered};
-        Assert.True((await legacy.UpdateAsync(session.Id,request)).IsFailure);
+        Assert.True((await legacy.UpdateAsync(session.Id,request,"senior",false)).IsFailure);
         request.PaymentStatus=PaymentStatus.Pending;request.Status=SessionStatus.Completed;
-        Assert.True((await legacy.UpdateAsync(session.Id,request)).IsFailure);Assert.Equal(0,(await db.TreatmentPlans.SingleAsync()).CompletedSessions);
+        Assert.True((await legacy.UpdateAsync(session.Id,request,"senior",false)).IsFailure);Assert.Equal(0,(await db.TreatmentPlans.SingleAsync()).CompletedSessions);
     }
     [Fact] public async Task An_overdue_appointment_remains_occupied_until_explicit_check_out()
     {
