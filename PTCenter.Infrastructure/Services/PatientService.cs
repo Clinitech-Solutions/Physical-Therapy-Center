@@ -57,7 +57,7 @@ public class PatientService(
             var userName = usernames.Next();
             if (await _userManager.FindByNameAsync(userName) != null) continue;
             var user = new ApplicationUser { UserName=userName, Email=email, PhoneNumber=request.PhoneNumber.Trim(),
-                FullName=request.FullName.Trim(), Gender=request.Gender, BirthDate=request.BirthDate, EmailConfirmed=true };
+                FullName=request.FullName.Trim(), Gender=request.Gender, BirthDate=request.BirthDate, EmailConfirmed=false };
             try
             {
                 var created = await _userManager.CreateAsync(user, GeneratePassword());
@@ -137,7 +137,7 @@ public class PatientService(
             totalCount / (double)request.PageSize);
 
         var patients = await query
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderBy(x => x.ApplicationUser.FullName).ThenBy(x => x.Id)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToListAsync();

@@ -115,6 +115,7 @@ public partial class BookingService
         var hours = await db.DoctorSchedules.AsNoTracking().Where(h => h.DoctorId == clinician).ToListAsync(); var absences = await db.DoctorAbsences.AsNoTracking().Where(x => x.DoctorId == clinician && !x.Withdrawn).ToListAsync();
         var duration = a.EndTime - a.StartTime;
         var conflicts = WorkingTimeConflicts(new DateTimeOffset(DateTime.SpecifyKind(start, DateTimeKind.Utc)), hours, absences, duration);
+        if((await WeeklyLimitAsync(a))?.Conflict(start) is {} frequencyConflict)conflicts.Add(frequencyConflict);
         // Keep-time replacement remains possible for an arrived, unstarted appointment whose scheduled time just passed.
         if (start == a.StartTime) conflicts.Remove("TimeInPast");
         var target = await db.Rooms.AsNoTracking().SingleOrDefaultAsync(r => r.Id == room && r.IsActive && r.Capacity > 0);
@@ -131,10 +132,12 @@ public partial class BookingService
         var rooms = await db.Rooms.AsNoTracking().Where(r => r.IsActive && r.Capacity > 0).OrderByDescending(r => r.Id == a.RoomId).ThenBy(r => r.Id).ToListAsync();
         var allHours = await db.DoctorSchedules.AsNoTracking().ToListAsync();
         var otherAppointments = await db.Appointments.AsNoTracking().Where(x => x.Id != a.Id && x.Status != AppointmentStatus.Cancelled && x.Status != AppointmentStatus.NoShow && x.Status != AppointmentStatus.Completed).ToListAsync();
+        var weeklyLimit=await WeeklyLimitAsync(a);
         var matching = new List<RecoveryCandidate>(); var exceptions = new List<RecoveryCandidate>(); var nearest = new List<RecoveryCandidate>();
         var duration = a.EndTime - a.StartTime;
         RecoveryCandidate? Candidate(BookingClinician clinician, DateTime start)
         {
+            if(weeklyLimit?.Conflict(start)!=null)return null;
             var working = WorkingTimeConflicts(new DateTimeOffset(DateTime.SpecifyKind(start, DateTimeKind.Utc)), allHours.Where(h => h.DoctorId == clinician.Id), absences.Where(x => x.DoctorId == clinician.Id), duration);
             if (start == a.StartTime) working.Remove("TimeInPast"); if (working.Count > 0) return null;
             foreach (var room in rooms) if (ClinicalCapacity.Conflicts(start, start + duration, a.PatientId, clinician.Id, room.Id, otherAppointments, clinician.Role == "Doctor" && a.AppointmentType == "Session", room.Capacity, actual: true).Count == 0) return new(clinician.Id, clinician.Name, clinician.Role, clinician.Gender, clinician.Gender == row.PatientGender, a.AppointmentType == "Session" && clinician.Role == "Senior", start, start + duration, room.Id, room.Name);

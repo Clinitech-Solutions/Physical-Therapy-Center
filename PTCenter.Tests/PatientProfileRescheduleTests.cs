@@ -19,6 +19,7 @@ public sealed partial class BookingDatabaseTests
     private async Task<(BookingReceipt Receipt,int Plan)> ProfileBooking(bool insurance=false)
     {
         var plan=await PlanAsync(3,insurance);var request=Treatment(plan,3);request.StartsAt=Enumerable.Range(0,3).Select(i=>Upcoming.AddDays(i)).ToList();
+        (await db.TreatmentPlans.FindAsync(plan))!.FrequencyPerWeek=3;await db.SaveChangesAsync();
         request.PricingMode="Package";request.Deposit=insurance?60:100;request.PaymentMethod=PaymentMethod.Cash;
         return(await service.CreateAsync(request),plan);
     }

@@ -9,13 +9,14 @@ namespace PTCenter.Infrastructure.Services;
 public partial class BookingService
 {
     private static string ScheduleVersion(Appointment a) => Hash(new { a.Id,Start=a.StartTime.Ticks,End=a.EndTime.Ticks,a.RoomId,a.DoctorId,a.SeniorId,a.Status,CheckIn=a.ActualCheckIn?.Ticks,CheckOut=a.ActualCheckOut?.Ticks,Updated=a.UpdatedAt?.Ticks });
-    private static bool CanReschedule(Appointment a) => a.Status == AppointmentStatus.Pending && a.ActualCheckIn == null && a.ActualCheckOut == null && a.StartTime > DateTime.UtcNow &&
+    private static bool CanReschedule(Appointment a) => a.Status == AppointmentStatus.Pending && a.ActualCheckIn == null && a.ActualCheckOut == null && a.TreatmentStartedAt == null && a.TreatmentEndedAt == null && a.StartTime > DateTime.UtcNow &&
         (a.TreatmentPlanSession == null || a.TreatmentPlanSession.CheckIn == null && a.TreatmentPlanSession.CheckOut == null && a.TreatmentPlanSession.Status == SessionStatus.Pending);
     private static void RequireUpcoming(Appointment a) {
         if(!CanReschedule(a))throw Rule("NotUpcoming","Only upcoming, unstarted pending appointments can be rescheduled. Completed, cancelled, no-show and started records stay unchanged.",409);
     }
-    private static List<string> IntervalConflicts(DateTimeOffset start,int patientId,string clinicianId,int roomId,IEnumerable<Appointment> candidates,bool doctorTreatment=true)
-        => ClinicalCapacity.Conflicts(start.UtcDateTime,start.UtcDateTime.AddMinutes(60),patientId,clinicianId,roomId,candidates,doctorTreatment,actual:true);
+    // Booking/reschedule availability uses planned reservations; live occupancy is enforced at arrival/start.
+    private static List<string> IntervalConflicts(DateTimeOffset start,int patientId,string clinicianId,int roomId,IEnumerable<Appointment> candidates,bool doctorTreatment=true,int roomCapacity=1)
+        => ClinicalCapacity.Conflicts(start.UtcDateTime,start.UtcDateTime.AddMinutes(60),patientId,clinicianId,roomId,candidates,doctorTreatment,roomCapacity);
     private static List<string> WorkingTimeConflicts(DateTimeOffset start,IEnumerable<DoctorSchedule> schedules,IEnumerable<DoctorAbsence> absences,TimeSpan? duration=null)
     {
         var local=TimeZoneInfo.ConvertTime(start,ClinicTimeZone);var end=TimeZoneInfo.ConvertTime(start.Add(duration??TimeSpan.FromMinutes(60)),ClinicTimeZone);var conflicts=new List<string>();
@@ -99,6 +100,8 @@ public partial class BookingService
         var candidates=await db.Appointments.AsNoTracking().Where(a=>a.Id!=id && a.Status!=AppointmentStatus.Cancelled&&a.Status!=AppointmentStatus.NoShow&&a.Status!=AppointmentStatus.Completed &&
             (a.StartTime<latest&&a.EndTime>earliest||a.Status==AppointmentStatus.InProgress&&a.ActualCheckOut==null)).ToListAsync(cancellationToken);
         var slots=new List<RescheduleSlot>();var notices=new List<string>();
+        var weeklyLimit=await WeeklyLimitAsync(appointment);
+        if(weeklyLimit?.Conflict(ClinicCalendar.DayStart(date)) is {} frequencyConflict)notices.Add(frequencyConflict);
         if(hours.Count==0)notices.Add("WorkingHoursNotConfigured");if(absences.Count>0)notices.Add("ClinicianAbsent");
         var localTimes=new SortedSet<DateTime>();
         var duration=appointment.EndTime-appointment.StartTime;
@@ -114,8 +117,9 @@ public partial class BookingService
             // Never invent a DST-gap time or choose an ambiguous offset silently.
             if(ClinicTimeZone.IsInvalidTime(local)||ClinicTimeZone.IsAmbiguousTime(local))continue;
             var start=new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local,ClinicTimeZone));
+            if(weeklyLimit?.Conflict(start.UtcDateTime)!=null)continue;
             if(WorkingTimeConflicts(start,hours,absences,duration).Count>0)continue;
-            foreach(var room in rooms)if(ClinicalCapacity.Conflicts(start.UtcDateTime,start.UtcDateTime+duration,appointment.PatientId,clinician,room.Id,candidates,doctorTreatment,room.Capacity,actual:true).Count==0)slots.Add(new(start.UtcDateTime,start.UtcDateTime+duration,room.Id,room.Name,room.Capacity));
+            foreach(var room in rooms)if(ClinicalCapacity.Conflicts(start.UtcDateTime,start.UtcDateTime+duration,appointment.PatientId,clinician,room.Id,candidates,doctorTreatment,room.Capacity).Count==0)slots.Add(new(start.UtcDateTime,start.UtcDateTime+duration,room.Id,room.Name,room.Capacity));
         }
         return new(id,ScheduleVersion(appointment),appointment.StartTime,appointment.EndTime,appointment.RoomId,clinician,clinicianName,date,slots,notices);
     }
