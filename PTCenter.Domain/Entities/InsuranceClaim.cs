@@ -4,6 +4,7 @@ namespace PTCenter.Domain.Entities;
 public class InsuranceClaim : BaseEntity
 {
     public int Id { get; set; }
+    public int? SubmissionBatchId { get; set; }
     public int InvoiceId { get; set; }
     public int CourseAgreementId { get; set; }
     public int TreatmentPlanSessionId { get; set; }

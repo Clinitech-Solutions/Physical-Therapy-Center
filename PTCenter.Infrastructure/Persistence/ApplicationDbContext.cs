@@ -31,6 +31,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<BookingBatch> BookingBatches { get; set; }
     public DbSet<TreatmentCourseAgreement> TreatmentCourseAgreements { get; set; }
     public DbSet<InsuranceClaim> InsuranceClaims { get; set; }
+    public DbSet<InsuranceChequeReceipt> InsuranceChequeReceipts { get; set; }
+    public DbSet<InsuranceClaimSubmission> InsuranceClaimSubmissions { get; set; }
 
     public DbSet<SessionNote> SessionNotes { get; set; }
     public DbSet<TreatmentSessionRecord> TreatmentSessionRecords { get; set; }

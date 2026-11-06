@@ -18,6 +18,10 @@ public class Payment : BaseEntity
     public string? PayerType { get; set; }
     public string? CollectionMethod { get; set; }
     public int? InsuranceClaimId { get; set; }
+    public int? InsuranceChequeReceiptId { get; set; }
+    public decimal? InsurerBalanceBefore { get; set; }
+    public DateOnly? InsuranceServiceMonth { get; set; }
+    public DateTime? InsuranceServiceDeliveredAt { get; set; }
 
     public DateTime PaymentDate { get; set; } = DateTime.UtcNow;
 

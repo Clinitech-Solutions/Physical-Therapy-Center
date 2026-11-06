@@ -130,6 +130,7 @@ public sealed class BillingQueryService(ApplicationDbContext db)
         return new(details,patients,totals);
     }
     private static string ReceiptIdentity(Payment p,Invoice invoice,IReadOnlyDictionary<int,string> batchKeys) {
+        if(p.InsuranceChequeReceiptId is {} cheque)return "cheque:"+cheque;
         var key=p.IdempotencyKey;
         var separator=key?.LastIndexOf(':') ?? -1;
         if(separator>0 && (key!.StartsWith("course:") || key.StartsWith("package:")) && int.TryParse(key[(separator+1)..],out _))return key[..separator];
@@ -145,6 +146,12 @@ public sealed class BillingQueryService(ApplicationDbContext db)
         var s=await ReadAsync(q,finance,ct);
         return new(s.Patients.Skip((int)Math.Min((long)(q.Page-1)*q.PageSize,int.MaxValue)).Take(q.PageSize).ToList(),s.Patients.Count,s.Invoices.Count,q.Page,q.PageSize,s.Totals,q.DateBasis);
     }
+    public async Task<IReadOnlyList<BillingInvoice>> MatchingInvoicesAsync(BillingQuery q,bool finance,CancellationToken ct=default) => (await ReadAsync(q,finance,ct)).Invoices;
+    public async Task<BillingInvoice> InvoiceContextAsync(int invoiceId,bool finance,CancellationToken ct=default) {
+        var patientId=await db.Invoices.Where(i=>i.Id==invoiceId).Select(i=>(int?)i.PatientId).SingleOrDefaultAsync(ct);
+        if(patientId==null)throw new BookingRuleException("Billing.InvoiceNotFound","Invoice was not found.",404);
+        return (await ReadAsync(new BillingQuery(),finance,ct,patientId)).Invoices.Single(i=>i.Id==invoiceId);
+    }
     public async Task<BillingPage<BillingInvoice>> InvoicesAsync(int patientId,BillingQuery q,bool finance,CancellationToken ct=default) {
         var s=await ReadAsync(q,finance,ct,patientId);var invoices=s.Invoices;
         return new(invoices.Skip((int)Math.Min((long)(q.Page-1)*q.PageSize,int.MaxValue)).Take(q.PageSize).ToList(),invoices.Count>0 ? 1 : 0,invoices.Count,q.Page,q.PageSize,Sum(invoices.Select(i=>i.Amounts)),q.DateBasis);
@@ -155,8 +162,8 @@ public sealed class BillingQueryService(ApplicationDbContext db)
         await db.Users.AsNoTracking().Where(u=>db.Appointments.Any(a=>a.TreatmentStartedBy==u.Id)).OrderBy(u=>u.FullName).Select(u=>new BillingOption(u.Id,u.FullName)).ToListAsync(ct));
     public async Task<byte[]> ExportAsync(BillingQuery q,bool finance,string kind,CancellationToken ct=default) {
         if(kind is not ("patients" or "invoices")) throw new BookingRuleException("Billing.InvalidExport","Choose patients or invoices.",400);
-        var s=await ReadAsync(q,finance,ct);var csv=new StringBuilder("\uFEFF");
-        void Line(params object?[] values) => csv.AppendLine(string.Join(",",values.Select(v=>Escape(v))));
+        var s=await ReadAsync(q,finance,ct);var csv=new FinancialCsv();
+        void Line(params object?[] values) => csv.Line(values);
         Line("Exported UTC",DateTime.UtcNow.ToString("O"));Line("Clinic timezone","Africa/Cairo");Line("Currency","EGP");Line("Date basis",q.DateBasis);Line("Scope","All matching records; page parameters do not limit export");
         Line("Applied filters",JsonSerializer.Serialize(q));Line("Matching patients",s.Patients.Count,"Matching invoices",s.Invoices.Count);
         Line("Agreed",s.Totals.Agreed,"Patient liability",s.Totals.PatientLiability,"Lifetime patient receipts",s.Totals.PatientReceipts,"Patient remaining",s.Totals.PatientRemaining,"Collected in period",s.Totals.CollectedInPeriod,"Receipt count",s.Totals.ReceiptCount);
@@ -166,7 +173,6 @@ public sealed class BillingQueryService(ApplicationDbContext db)
         } else { Line("Invoice ID","Reference","Patient ID","Patient","Invoice UTC","Delivery UTC","Funding","Historical company","Plan","Account","Pricing","Type","Invoice status","Agreed","Original patient share","Patient liability","Insurer share","Lifetime patient receipts","Patient remaining","Collected in period","Actual clinician","Patient status","Invoice fully settled");
             foreach(var i in s.Invoices) Line(i.Id,i.Reference,i.PatientId,i.PatientName,i.CreatedAt.ToString("O"),i.DeliveredAt?.ToString("O"),i.Funding,i.Company ?? "Unavailable",i.PlanId,i.AgreementId,i.PricingMode,i.Type,i.Status,i.Amounts.Agreed,i.PatientShare,i.Amounts.PatientLiability,i.InsurerShare,i.Amounts.PatientReceipts,i.Amounts.PatientRemaining,i.Amounts.CollectedInPeriod,i.ClinicianName ?? "Unavailable",i.PatientStatus,i.FullySettled);
         }
-        return Encoding.UTF8.GetBytes(csv.ToString());
+        return csv.Bytes();
     }
-    private static string Escape(object? value) { var text=Convert.ToString(value,CultureInfo.InvariantCulture) ?? ""; if(text.TrimStart().FirstOrDefault() is '=' or '+' or '-' or '@' or '\t' or '\r' or '\n') text="'"+text; return "\""+text.Replace("\"","\"\"")+"\""; }
 }

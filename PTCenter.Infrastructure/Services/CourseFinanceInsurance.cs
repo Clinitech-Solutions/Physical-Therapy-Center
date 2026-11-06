@@ -38,10 +38,17 @@ public partial class CourseFinanceService
 
     public async Task<InsuranceClaim> SubmitClaimAsync(SubmitInsuranceClaimRequest request, string actor)
     {
+        await using var transaction=await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(db);
+        var claim=await SubmitClaimCoreAsync(request,actor);
+        await transaction.CommitAsync();return claim;
+    }
+
+    internal async Task<InsuranceClaim> SubmitClaimCoreAsync(SubmitInsuranceClaimRequest request, string actor)
+    {
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 90 || string.IsNullOrWhiteSpace(request.SubmissionReference) || request.SubmissionReference.Length > 150)
             throw Rule("ClaimReferenceRequired", "Enter the submitted claim reference and a stable retry key.");
         var submissionReference = request.SubmissionReference.Trim();
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         var previous = await db.InsuranceClaims.SingleOrDefaultAsync(c => c.IdempotencyKey == request.IdempotencyKey);
         if (previous != null)
         {
@@ -57,7 +64,7 @@ public partial class CourseFinanceService
         var claim = new InsuranceClaim { InvoiceId = invoice.Id, CourseAgreementId = agreement.Id, TreatmentPlanSessionId = invoice.TreatmentPlanSessionId.Value,
             PatientId = invoice.PatientId, InsuranceCompanyId = agreement.InsuranceCompanyId.Value, ApprovalReference = agreement.ApprovalReference,
             Amount = invoice.InsuranceAmount, SubmissionReference = submissionReference, IdempotencyKey = request.IdempotencyKey, SubmittedAt = DateTime.UtcNow, SubmittedBy = actor };
-        db.InsuranceClaims.Add(claim); await db.SaveChangesAsync(); await transaction.CommitAsync(); return claim;
+        db.InsuranceClaims.Add(claim); await db.SaveChangesAsync(); return claim;
     }
 
     public async Task<int> SettleClaimAsync(int claimId, SettleInsuranceClaimRequest request)
@@ -66,6 +73,7 @@ public partial class CourseFinanceService
             request.Method == PaymentMethod.Insurance || string.IsNullOrWhiteSpace(request.SettlementReference) || request.SettlementReference.Length > 150)
             throw Rule("SettlementDetailsRequired", "Enter the actual insurer receipt amount, collection method and settlement reference.");
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(db);
         var key = $"insurer:{request.IdempotencyKey}";
         var previous = await db.Payments.SingleOrDefaultAsync(p => p.IdempotencyKey == key);
         if (previous != null)
@@ -74,17 +82,25 @@ public partial class CourseFinanceService
                 throw Rule("RetryKeyConflict", "This settlement key belongs to different receipt details.", 409);
             return previous.Id;
         }
+        var paymentId=await AllocateInsurerReceiptAsync(claimId,request.Amount,request.Method.ToString(),request.SettlementReference,key,DateTime.UtcNow);
+        await transaction.CommitAsync();return paymentId;
+    }
+
+    internal async Task<int> AllocateInsurerReceiptAsync(int claimId,decimal amount,string method,string reference,string key,DateTime paymentDate,int? chequeId=null,DateOnly? serviceMonth=null,DateTime? deliveredAt=null)
+    {
+        if(!Money(amount) || amount<=0)throw Rule("SettlementDetailsRequired","Enter a positive actual insurer receipt.");
         var claim = await db.InsuranceClaims.SingleOrDefaultAsync(c => c.Id == claimId) ?? throw Rule("ClaimNotFound", "The submitted claim was not found.", 404);
         var invoice = await db.Invoices.Include(i => i.Payments).SingleAsync(i => i.Id == claim.InvoiceId);
         if (invoice.Status is InvoiceStatus.Waived or InvoiceStatus.Cancelled) throw Rule("CannotReceivePayment", "A waived or cancelled invoice cannot receive insurer money.", 409);
         var received = invoice.Payments.Where(p => InsurerReceipt(p)).Sum(p => p.Amount);
-        if (request.Amount > claim.Amount - received) throw Rule("SettlementExceedsBalance", "The insurer receipt exceeds this claim's outstanding balance.");
-        var payment = new Payment { InvoiceId = invoice.Id, InsuranceClaimId = claim.Id, Amount = request.Amount, PaymentMethod = PaymentMethod.Insurance,
-            PayerType = "Insurer", CollectionMethod = request.Method.ToString(), IdempotencyKey = key, TransactionId = request.SettlementReference,
-            PaymentDate = DateTime.UtcNow, Status = PaymentStatus.Paid };
+        if (amount > claim.Amount - received) throw Rule("SettlementExceedsBalance", "The insurer receipt exceeds this claim's outstanding balance.");
+        var payment = new Payment { InvoiceId = invoice.Id, InsuranceClaimId = claim.Id, Amount = amount, PaymentMethod = PaymentMethod.Insurance,
+            PayerType = "Insurer", CollectionMethod = method, IdempotencyKey = key, TransactionId = reference,
+            PaymentDate = paymentDate, InsuranceChequeReceiptId=chequeId, Status = PaymentStatus.Paid,
+            InsurerBalanceBefore=chequeId!=null ? Math.Max(0,claim.Amount-received) : null, InsuranceServiceMonth=serviceMonth, InsuranceServiceDeliveredAt=deliveredAt };
         invoice.Payments.Add(payment); RefreshInvoice(invoice);
         var session = await db.TreatmentPlanSessions.SingleAsync(s => s.Id == claim.TreatmentPlanSessionId);
         session.PaymentStatus = invoice.Status == InvoiceStatus.Paid ? PaymentStatus.Paid : PaymentStatus.Pending;
-        await db.SaveChangesAsync(); await transaction.CommitAsync(); return payment.Id;
+        await db.SaveChangesAsync();return payment.Id;
     }
 }

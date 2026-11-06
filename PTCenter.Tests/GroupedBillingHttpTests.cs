@@ -133,7 +133,10 @@ public class GroupedBillingHttpTests
         var claim=await client.PostAsJsonAsync("/api/Finance/insurance/claims",new {invoiceId=id,idempotencyKey="ceo-claim",submissionReference="CLAIM-001"});Assert.Equal(HttpStatusCode.OK,claim.StatusCode);
         var claimId=(await claim.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
         var receipt=new{idempotencyKey="ceo-settlement",amount=30,method="Online",settlementReference="INSURER-RECEIPT-001"};
-        Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync($"/api/Finance/insurance/claims/{claimId}/settlements",receipt)).StatusCode);Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync($"/api/Finance/insurance/claims/{claimId}/settlements",receipt)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,(await client.PostAsJsonAsync($"/api/Finance/insurance/claims/{claimId}/settlements",receipt)).StatusCode);
+        var cheque=new ChequeRequest{IdempotencyKey="ceo-cheque",CompanyId=1,ServiceMonths=["2026-11"],ClaimIds=[claimId],ChequeNumber="CEO-001",BankName="Bank",Amount=30,ReceivedOn=new(2026,11,6)};
+        var review=await client.PostAsJsonAsync("/api/Finance/insurance/cheques/preview",cheque);Assert.Equal(HttpStatusCode.OK,review.StatusCode);cheque.ExpectedAllocationHash=(await review.Content.ReadFromJsonAsync<ChequePreview>())!.Hash;
+        Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync("/api/Finance/insurance/cheques",cheque)).StatusCode);Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync("/api/Finance/insurance/cheques",cheque)).StatusCode);
         var summary=await Read<BillingPatient>(client,"/api/Billing/patients?companyIds=1&claimStatus=Partial");Assert.Equal(80,summary.Totals.ClaimsSubmitted);Assert.Equal(30,summary.Totals.InsurerReceipts);Assert.Equal(50,summary.Totals.InsurerEarnedOutstanding);Assert.Equal(20,summary.Totals.PatientReceipts);
         await ReceptionAccessFixture.LoginAsync(client);Assert.Equal(HttpStatusCode.Forbidden,(await client.PostAsJsonAsync($"/api/Finance/insurance/claims/{claimId}/settlements",receipt)).StatusCode);
         var reception=await Read<BillingPatient>(client,"/api/Billing/patients?dateBasis=Collection&from=2026-11-06&to=2026-11-06");Assert.Equal(70,reception.Totals.CollectedInPeriod);

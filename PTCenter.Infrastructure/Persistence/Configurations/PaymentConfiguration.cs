@@ -12,6 +12,9 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         b.HasKey(x => x.Id);
         b.Property(x => x.PayerType).HasMaxLength(20); b.Property(x => x.CollectionMethod).HasMaxLength(30);
         b.HasOne<InsuranceClaim>().WithMany().HasForeignKey(x => x.InsuranceClaimId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<InsuranceChequeReceipt>().WithMany().HasForeignKey(x => x.InsuranceChequeReceiptId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x=>new{x.InsuranceChequeReceiptId,x.InsuranceClaimId}).IsUnique().HasFilter("[InsuranceChequeReceiptId] IS NOT NULL");
+        b.Property(x=>x.InsurerBalanceBefore).HasPrecision(18,2);
         b.Property(x => x.IdempotencyKey).HasMaxLength(120);
         b.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
 

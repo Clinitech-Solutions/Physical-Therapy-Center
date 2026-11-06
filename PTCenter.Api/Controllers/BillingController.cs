@@ -29,6 +29,9 @@ public class BillingController(IBillingService billing, ApplicationDbContext db)
     [HttpGet("filter-options")]
     [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public Task<IActionResult> Options(CancellationToken ct) => Query(()=>query.OptionsAsync(ct));
+    [HttpGet("invoices/{id:int}/context")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
+    public Task<IActionResult> Context(int id,CancellationToken ct) => Query(()=>query.InvoiceContextAsync(id,Finance,ct));
     [HttpGet("accounts/{key}/allocation")]
     [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public Task<IActionResult> Allocation(string key,[FromQuery] decimal amount,CancellationToken ct) => Query(()=>new BillingAllocationService(db).PreviewAsync(key,amount,ct));
