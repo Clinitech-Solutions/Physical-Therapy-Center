@@ -27,11 +27,12 @@ public class CourseFinanceController(ApplicationDbContext db) : ControllerBase
     [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     public Task<IActionResult> Collect(int id, CollectBookingPaymentRequest request) => Execute(() => finance.CollectForAppointmentAsync(id, request));
     [HttpGet("insurance/accounts")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
     public Task<IActionResult> InsuranceAccounts() => Execute(() => finance.InsuranceAccountsAsync());
     [HttpPost("insurance/claims")]
-    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
     public Task<IActionResult> Claim(SubmitInsuranceClaimRequest request) => Execute(() => finance.SubmitClaimAsync(request, User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ""));
     [HttpPost("insurance/claims/{id:int}/settlements")]
-    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
     public Task<IActionResult> Settle(int id, SettleInsuranceClaimRequest request) => Execute(async () => new { paymentId = await finance.SettleClaimAsync(id, request) });
 }

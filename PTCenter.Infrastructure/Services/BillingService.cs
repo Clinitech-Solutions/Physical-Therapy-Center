@@ -16,11 +16,11 @@ public class BillingService(ApplicationDbContext context) : IBillingService
     private static bool Money(decimal n) => n >= 0 && n <= 999999999 && decimal.Round(n, 2) == n;
     private IQueryable<Invoice> Invoices => context.Invoices.Include(i => i.Patient).ThenInclude(p => p.ApplicationUser)
         .Include(i => i.Patient).ThenInclude(p => p.InsuranceCompany).Include(i => i.Appointment).Include(i => i.Payments);
-    public async Task<Result<List<InvoiceResponse>>> GetAllInvoicesAsync() => Result.Success((await Invoices.AsNoTracking().OrderByDescending(i => i.Id).ToListAsync()).Select(MapInvoice).ToList());
+    public async Task<Result<List<InvoiceResponse>>> GetAllInvoicesAsync() => Result.Success(await MapHistoryAsync(await Invoices.AsNoTracking().OrderByDescending(i => i.Id).ToListAsync()));
     public async Task<Result<InvoiceResponse>> GetInvoiceByIdAsync(int id)
     {
         var invoice = await Invoices.AsNoTracking().SingleOrDefaultAsync(i => i.Id == id);
-        return invoice == null ? Reject<InvoiceResponse>("InvoiceNotFound", "Invoice was not found.", 404) : Result.Success(MapInvoice(invoice));
+        return invoice == null ? Reject<InvoiceResponse>("InvoiceNotFound", "Invoice was not found.", 404) : Result.Success((await MapHistoryAsync([invoice])).Single());
     }
     public async Task<Result<InvoiceResponse>> CreateInvoiceAsync(CreateInvoiceRequest request)
     {
@@ -66,6 +66,7 @@ public class BillingService(ApplicationDbContext context) : IBillingService
             return Reject<PaymentResponse>("InvalidPayment", "A stable payment key, valid method and positive currency amount are required.");
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         var key = $"invoice:{request.InvoiceId}:{request.IdempotencyKey}";
+        await ClinicMutationLock.AcquireAsync(context);
         var previous = await context.Payments.SingleOrDefaultAsync(p => p.IdempotencyKey == key);
         if (previous != null) return previous.InvoiceId == request.InvoiceId && previous.Amount == request.Amount && previous.PaymentMethod == request.Method
             ? Result.Success(MapPayment(previous)) : Reject<PaymentResponse>("RetryKeyConflict", "This payment key belongs to a different collection.", 409);
@@ -75,6 +76,8 @@ public class BillingService(ApplicationDbContext context) : IBillingService
         var insurerPayment = request.Method == PaymentMethod.Insurance;
         if (insurerPayment) return Reject<PaymentResponse>("ClaimSettlementRequired", "Record insurer receipts against a submitted delivered-service claim.", 409);
         var received = invoice.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
+        if (request.ExpectedRemaining is {} expected && expected != Math.Max(0, invoice.PatientAmount - received))
+            return Reject<PaymentResponse>("StaleBalance", "The patient balance changed. Refresh the invoice before collecting.", 409);
         var liability = insurerPayment ? invoice.InsuranceAmount : invoice.PatientAmount;
         if (request.Amount > liability - received) return Reject<PaymentResponse>("PaymentExceedsBalance", "Payment cannot exceed the remaining liability of its payer.");
         var payment = new Payment { InvoiceId = invoice.Id, Amount = request.Amount, PaymentMethod = request.Method.Value, PayerType = "Patient", CollectionMethod = request.Method.Value.ToString(), IdempotencyKey = key, Status = PaymentStatus.Paid, PaymentDate = DateTime.UtcNow };
@@ -91,12 +94,22 @@ public class BillingService(ApplicationDbContext context) : IBillingService
         if (!await context.Invoices.AnyAsync(i => i.Id == invoiceId)) return Reject<List<PaymentResponse>>("InvoiceNotFound", "Invoice was not found.", 404);
         return Result.Success((await context.Payments.AsNoTracking().Where(p => p.InvoiceId == invoiceId).OrderBy(p => p.Id).ToListAsync()).Select(MapPayment).ToList());
     }
+    private async Task<List<InvoiceResponse>> MapHistoryAsync(List<Invoice> invoices)
+    {
+        var courseIds=invoices.Where(i=>i.CourseAgreementId!=null).Select(i=>i.CourseAgreementId!.Value).Distinct().ToArray();
+        var agreements=await context.TreatmentCourseAgreements.AsNoTracking().Where(a=>courseIds.Contains(a.Id)).ToDictionaryAsync(a=>a.Id);
+        var ids=invoices.Select(i=>i.Id).ToArray();
+        var claims=await context.InsuranceClaims.AsNoTracking().Where(c=>ids.Contains(c.InvoiceId)).ToDictionaryAsync(c=>c.InvoiceId);
+        var companies=await context.InsuranceCompanies.AsNoTracking().ToDictionaryAsync(c=>c.Id,c=>c.Name);
+        return invoices.Select(i=>{var response=MapInvoice(i);var companyId=(i.CourseAgreementId is {} aid ? agreements.GetValueOrDefault(aid)?.InsuranceCompanyId : null) ?? claims.GetValueOrDefault(i.Id)?.InsuranceCompanyId;
+            response.InsuranceCompany=companyId is {} cid ? companies.GetValueOrDefault(cid) : i.InsuranceAmount>0 ? "Historical company unavailable" : null;return response;}).ToList();
+    }
     private static InvoiceResponse MapInvoice(Invoice i)
     {
         var paid = i.Payments.Where(p => CourseFinanceService.PatientReceipt(p)).Sum(p => p.Amount);
         return new() { Id = i.Id, InvoiceNumber = i.InvoiceNumber, AppointmentId = i.AppointmentId, PatientId = i.PatientId,
-            PatientName = i.Patient.ApplicationUser.FullName, PatientPhone = i.Patient.ApplicationUser.PhoneNumber, InsuranceCompany = i.Patient.InsuranceCompany?.Name,
-            TotalAmount = i.TotalAmount, PatientAmount = i.PatientAmount, InsuranceAmount = i.InsuranceAmount, PaidAmount = paid, RemainingAmount = Math.Max(0, i.PatientAmount - paid),
+            PatientName = i.Patient.ApplicationUser.FullName, PatientPhone = i.Patient.ApplicationUser.PhoneNumber,
+            TotalAmount = i.TotalAmount, PatientAmount = i.PatientAmount, InsuranceAmount = i.InsuranceAmount, PaidAmount = paid, RemainingAmount = i.Status is InvoiceStatus.Waived or InvoiceStatus.Cancelled ? 0 : Math.Max(0, i.PatientAmount - paid),
             CourseAgreementId = i.CourseAgreementId, TreatmentPlanSessionId = i.TreatmentPlanSessionId, DeliveredAt = i.DeliveredAt,
             Type = i.Type, Status = i.Status, AppointmentDate = i.Appointment?.StartTime, CreatedAt = i.CreatedAt,
             PaymentMethod = i.Payments.LastOrDefault(p => p.Status == PaymentStatus.Paid)?.PaymentMethod.ToString() };

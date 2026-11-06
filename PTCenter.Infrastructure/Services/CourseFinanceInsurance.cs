@@ -19,14 +19,13 @@ public partial class CourseFinanceService
         foreach (var i in invoices)
         {
             var agreement = i.CourseAgreementId is int id ? agreements.GetValueOrDefault(id) : null;
-            var companyId = agreement?.InsuranceCompanyId ?? i.Patient.InsuranceCompanyId;
-            if (companyId == null) continue;
+            var claim = claims.GetValueOrDefault(i.Id);
+            var companyId = agreement?.InsuranceCompanyId ?? claim?.InsuranceCompanyId;
             var delivered = i.DeliveredAt ?? (i.Appointment?.Status == AppointmentStatus.Completed ? i.Appointment.ActualCheckOut : null);
             var collected = i.Payments.Where(p => InsurerReceipt(p)).Sum(p => p.Amount);
-            var earned = delivered != null ? i.InsuranceAmount : 0;
-            var claim = claims.GetValueOrDefault(i.Id);
+            var earned = delivered != null && i.Status is not (InvoiceStatus.Waived or InvoiceStatus.Cancelled) ? i.InsuranceAmount : 0;
             rows.Add(new(i.Id, claim?.Id, i.CourseAgreementId, i.TreatmentPlanSessionId, i.PatientId, i.Patient.ApplicationUser.FullName,
-                companyId.Value, companiesById.GetValueOrDefault(companyId.Value) ?? "", agreement?.ApprovalReference, delivered, i.InsuranceAmount, earned,
+                companyId ?? 0, companyId is {} cid ? companiesById.GetValueOrDefault(cid) ?? "Historical company unavailable" : "Historical company unavailable", agreement?.ApprovalReference, delivered, i.InsuranceAmount, earned,
                 claim?.Amount ?? 0, collected, Math.Max(0, earned - collected), claim?.SubmissionReference) {
                     CanSubmitClaim = i.DeliveredAt != null && agreement?.ApprovalReference != null && i.TreatmentPlanSessionId != null && claim == null });
         }
@@ -50,7 +49,7 @@ public partial class CourseFinanceService
             return previous;
         }
         var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == request.InvoiceId) ?? throw Rule("InvoiceNotFound", "Invoice was not found.", 404);
-        if (invoice.CourseAgreementId == null || invoice.TreatmentPlanSessionId == null || invoice.DeliveredAt == null || invoice.InsuranceAmount <= 0)
+        if (invoice.Status is InvoiceStatus.Waived or InvoiceStatus.Cancelled || invoice.CourseAgreementId == null || invoice.TreatmentPlanSessionId == null || invoice.DeliveredAt == null || invoice.InsuranceAmount <= 0)
             throw Rule("DeliveredServiceRequired", "Only verified delivered insured sessions can be submitted. Legacy records need financial review.", 409);
         var agreement = await db.TreatmentCourseAgreements.SingleAsync(a => a.Id == invoice.CourseAgreementId);
         if (agreement.InsuranceCompanyId == null || agreement.ApprovalReference == null) throw Rule("ApprovalRequired", "The saved approval is required.", 409);
@@ -77,6 +76,7 @@ public partial class CourseFinanceService
         }
         var claim = await db.InsuranceClaims.SingleOrDefaultAsync(c => c.Id == claimId) ?? throw Rule("ClaimNotFound", "The submitted claim was not found.", 404);
         var invoice = await db.Invoices.Include(i => i.Payments).SingleAsync(i => i.Id == claim.InvoiceId);
+        if (invoice.Status is InvoiceStatus.Waived or InvoiceStatus.Cancelled) throw Rule("CannotReceivePayment", "A waived or cancelled invoice cannot receive insurer money.", 409);
         var received = invoice.Payments.Where(p => InsurerReceipt(p)).Sum(p => p.Amount);
         if (request.Amount > claim.Amount - received) throw Rule("SettlementExceedsBalance", "The insurer receipt exceeds this claim's outstanding balance.");
         var payment = new Payment { InvoiceId = invoice.Id, InsuranceClaimId = claim.Id, Amount = request.Amount, PaymentMethod = PaymentMethod.Insurance,

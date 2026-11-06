@@ -351,10 +351,12 @@ public partial class BookingService(ApplicationDbContext db)
         var courseId = await CourseIdAsync(accountKey);
         if (courseId != null)
         {
+            await ValidateAllocationAsync(accountKey, request, "course:");
             await new CourseFinanceService(db).CollectAsync(courseId.Value, request.IdempotencyKey, request.Amount, request.Method.Value);
             await transaction.CommitAsync(); return await AnyCourseReceiptAsync(courseId.Value);
         }
         var batch = await db.BookingBatches.SingleOrDefaultAsync(b => b.IdempotencyKey == accountKey) ?? throw Rule("BookingNotFound", "Booking account was not found.", 404);
+        await ValidateAllocationAsync(accountKey, request, "package:");
         var prefix = $"package:{request.IdempotencyKey}:";
         var previous = await db.Payments.Include(p => p.Invoice).ThenInclude(i => i.Appointment).Where(p => p.IdempotencyKey != null && p.IdempotencyKey.StartsWith(prefix)).ToListAsync();
         if (previous.Count > 0)
@@ -379,6 +381,13 @@ public partial class BookingService(ApplicationDbContext db)
             remaining -= amount;
         }
         await db.SaveChangesAsync(); await transaction.CommitAsync(); return await ReceiptAsync(accountKey);
+    }
+
+    private async Task ValidateAllocationAsync(string accountKey, CollectBookingPaymentRequest request,string prefix)
+    {
+        if(request.ExpectedAllocationHash==null || await db.Payments.AnyAsync(p=>p.IdempotencyKey!=null && p.IdempotencyKey.StartsWith(prefix+request.IdempotencyKey+":"))) return;
+        var preview=await new BillingAllocationService(db).PreviewAsync(accountKey,request.Amount);
+        if(preview.Hash!=request.ExpectedAllocationHash) throw Rule("StaleBalance","The account allocation changed. Review the refreshed allocation before collecting.",409);
     }
 
     public async Task TransitionAsync(int id, AppointmentStatus status)
