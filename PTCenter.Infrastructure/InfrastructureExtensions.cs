@@ -34,6 +34,7 @@ public static class InfrastructureExtensions
         {
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IPatientService, PatientService>();
+            services.AddSingleton<IPatientUsernameGenerator, PatientUsernameGenerator>();
             services.AddScoped<IInsuranceCompanyService, InsuranceCompanyService>();
             services.AddScoped<IInsuranceDocumentService, InsuranceDocumentService>();
             services.AddScoped<ITreatmentPlanService, TreatmentPlanService>();

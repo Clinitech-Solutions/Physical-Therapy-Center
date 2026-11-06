@@ -19,6 +19,7 @@ public class CourseFinanceConfiguration : IEntityTypeConfiguration<TreatmentCour
     }
     public void Configure(EntityTypeBuilder<InsuranceClaim> b)
     {
+        b.HasOne<InsuranceClaimSubmission>().WithMany().HasForeignKey(x=>x.SubmissionBatchId).OnDelete(DeleteBehavior.Restrict);
         b.HasKey(x => x.Id); b.HasIndex(x => x.InvoiceId).IsUnique(); b.HasIndex(x => x.IdempotencyKey).IsUnique();
         b.Property(x => x.IdempotencyKey).HasMaxLength(100); b.Property(x => x.SubmissionReference).HasMaxLength(150);
         b.Property(x => x.ApprovalReference).HasMaxLength(100); b.Property(x => x.SubmittedBy).HasMaxLength(450); b.Property(x => x.Amount).HasPrecision(18, 2);

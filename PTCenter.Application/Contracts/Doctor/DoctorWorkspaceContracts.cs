@@ -3,7 +3,10 @@ namespace PTCenter.Application.Contracts.Doctor;
 public record DoctorVisit(int AppointmentId, int PatientId, string PatientName, string? Phone, string Gender,
     int? TreatmentPlanId, int? SessionId, int? SessionNumber, string? PlanSummary, string? DoctorId, string? DoctorName,
     int? RoomId, string? RoomName, DateTime PlannedStart, DateTime PlannedEnd, DateTime? ArrivedAt, DateTime? DepartedAt,
-    DateTime? TreatmentStartedAt, DateTime? TreatmentEndedAt, string State);
+    DateTime? TreatmentStartedAt, DateTime? TreatmentEndedAt, string State) {
+    public bool CoveringTreatment { get; init; }
+    public bool NeedsAttention { get; init; }
+}
 public record DoctorScheduleResponse(DateOnly Date, List<DoctorVisit> Appointments, List<DoctorVisit> ActiveTreatments);
 public record ClinicalPlan(int Id, string Diagnosis, string ConditionType, string? AssessmentNotes, DateTime? AssessedAt,
     string SeniorName, string TreatmentType, string? Exercises, int Prescribed, int Booked, int Completed, int FrequencyPerWeek,

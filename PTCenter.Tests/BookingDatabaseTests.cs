@@ -208,16 +208,17 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         var session=await db.TreatmentPlanSessions.SingleAsync(s=>s.Id==receipt.Appointments[0].TreatmentPlanSessionId);
         var legacy=new TreatmentPlanSessionService(db);
         var request=new PTCenter.Application.Contracts.TreatmentPlanSession.UpdateTreatmentPlanSessionRequest{SessionNumber=session.SessionNumber,SessionDate=session.SessionDate,Status=SessionStatus.Pending,PaymentStatus=PaymentStatus.PackageCovered};
-        Assert.True((await legacy.UpdateAsync(session.Id,request)).IsFailure);
+        Assert.True((await legacy.UpdateAsync(session.Id,request,"senior",false)).IsFailure);
         request.PaymentStatus=PaymentStatus.Pending;request.Status=SessionStatus.Completed;
-        Assert.True((await legacy.UpdateAsync(session.Id,request)).IsFailure);Assert.Equal(0,(await db.TreatmentPlans.SingleAsync()).CompletedSessions);
+        Assert.True((await legacy.UpdateAsync(session.Id,request,"senior",false)).IsFailure);Assert.Equal(0,(await db.TreatmentPlans.SingleAsync()).CompletedSessions);
     }
     [Fact] public async Task An_overdue_appointment_remains_occupied_until_explicit_check_out()
     {
         var request=Treatment(await PlanAsync(),2);request.Deposit=200;request.PaymentMethod=PaymentMethod.Cash;
         var receipt=await service.CreateAsync(request);
         await service.TransitionAsync(receipt.Appointments[0].Id,AppointmentStatus.InProgress);
-        var current=await db.Appointments.FindAsync(receipt.Appointments[0].Id);current!.ActualCheckIn=DateTime.UtcNow.AddHours(-2);current.StartTime=DateTime.UtcNow.AddHours(-3);current.EndTime=DateTime.UtcNow.AddHours(-2);await db.SaveChangesAsync();
+        // Use the fixture's clinical clock so this occupancy check does not depend on the machine's current shift.
+        var current=await db.Appointments.FindAsync(receipt.Appointments[0].Id);current!.ActualCheckIn=start.UtcDateTime.AddHours(-2);current.StartTime=start.UtcDateTime.AddHours(-3);current.EndTime=start.UtcDateTime.AddHours(-2);await db.SaveChangesAsync();
         var error=await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(receipt.Appointments[1].Id,AppointmentStatus.InProgress));
         Assert.Equal("Booking.ActualOccupancy",error.Code);Assert.Null(current.ActualCheckOut);
         await FinishClinicalForTest(current.Id);await service.TransitionAsync(current.Id,AppointmentStatus.Completed);

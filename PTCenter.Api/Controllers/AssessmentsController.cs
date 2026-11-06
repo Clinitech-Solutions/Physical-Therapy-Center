@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PTCenter.Api.Extensions;
 using PTCenter.Application.Contracts.Assessments;
@@ -11,7 +11,7 @@ namespace PTCenter.Api.Controllers;
 [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class AssessmentsController(
     IAssessmentService assessmentService)
-    : ControllerBase
+    : ClinicalController
 {
     private readonly IAssessmentService _assessmentService =
         assessmentService;
@@ -27,7 +27,7 @@ public class AssessmentsController(
         CreateAssessmentRequest request)
     {
         var result =
-            await _assessmentService.AddAsync(request);
+            await _assessmentService.AddAsync(request, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok(result.Value)
@@ -76,7 +76,7 @@ public class AssessmentsController(
         UpdateAssessmentRequest request)
     {
         var result =
-            await _assessmentService.UpdateAsync(id, request);
+            await _assessmentService.UpdateAsync(id, request, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok(result.Value)
@@ -90,7 +90,7 @@ public class AssessmentsController(
     public async Task<IActionResult> Delete(int id)
     {
         var result =
-            await _assessmentService.DeleteAsync(id);
+            await _assessmentService.DeleteAsync(id, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok()

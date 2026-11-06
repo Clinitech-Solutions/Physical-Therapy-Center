@@ -6,10 +6,13 @@ namespace PTCenter.Application.Contracts.Patients;
 
 public class CreatePatientRequest
 {
-    // Legacy clients may still send this value; registration never trusts or uses it.
+    // Legacy clients may send a username, but only the backend generator chooses the Identity name.
     public string? UserName { get; set; }
     [EmailAddress, StringLength(256)]
     public string? Email { get; set; }
+
+    [StringLength(100, MinimumLength = 1)]
+    public string? IdempotencyKey { get; set; }
 
     [Required]
     [StringLength(150, MinimumLength = 2)]

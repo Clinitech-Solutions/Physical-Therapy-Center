@@ -222,7 +222,7 @@ public partial class CourseFinanceService(ApplicationDbContext db)
                 throw Rule("RetryKeyConflict", "This receipt key belongs to different payment details.", 409);
             return;
         }
-        var invoices = await CourseInvoices(agreementId).OrderBy(i => i.Id).ToListAsync();
+        var invoices = await CourseInvoices(agreementId).Where(i=>i.Status != InvoiceStatus.Waived && i.Status != InvoiceStatus.Cancelled).OrderBy(i => i.Id).ToListAsync();
         if (amount > invoices.Sum(i => Math.Max(0, i.PatientAmount - i.Payments.Where(PatientReceipt).Sum(p => p.Amount))))
             throw Rule("PaymentExceedsBalance", "Payment exceeds the remaining patient balance.");
         var remaining = amount;

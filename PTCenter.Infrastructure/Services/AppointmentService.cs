@@ -51,11 +51,10 @@ public class AppointmentService(ApplicationDbContext context, BookingService boo
 
         if (request.Date.HasValue)
         {
-            var date = request.Date.Value.Date;
-            var nextDate = date.AddDays(1);
+            var range = ClinicCalendar.UtcDay(DateOnly.FromDateTime(request.Date.Value));
 
             query = query.Where(x =>
-                x.StartTime >= date && x.StartTime < nextDate);
+                x.StartTime >= range.Start && x.StartTime < range.End);
         }
 
         if (request.Status.HasValue)

@@ -22,4 +22,14 @@ public class AppointmentScheduleChange
     public string NewRoomName { get; set; } = "";
     public string ClinicianId { get; set; } = "";
     public string? Reason { get; set; }
+    public string Action { get; set; } = "Reschedule";
+    public int? AbsenceId { get; set; }
+    public string? PreviousClinicianId { get; set; }
+    public string? PreviousClinicianName { get; set; }
+    public string? ClinicianName { get; set; }
+    public string? ContactOutcome { get; set; }
+    public string? ConsentMethod { get; set; }
+    public DateTime? ConsentRecordedAt { get; set; }
+    public string? ConsentReason { get; set; }
+    public bool GenderException { get; set; }
 }

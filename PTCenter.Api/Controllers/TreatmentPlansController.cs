@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PTCenter.Api.Extensions;
 using PTCenter.Application.Contracts.TreatmentPlans;
@@ -10,7 +10,7 @@ namespace PTCenter.Api.Controllers;
 [Route("api/[controller]/[action]")]
 [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class TreatmentPlansController(
-    ITreatmentPlanService treatmentPlanService) : ControllerBase
+    ITreatmentPlanService treatmentPlanService) : ClinicalController
 {
     private readonly ITreatmentPlanService _treatmentPlanService =
         treatmentPlanService;
@@ -26,7 +26,7 @@ public class TreatmentPlansController(
     public async Task<IActionResult> Add(
         CreateTreatmentPlanRequest request)
     {
-        var result = await _treatmentPlanService.AddAsync(request);
+        var result = await _treatmentPlanService.AddAsync(request, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok(result.Value)
@@ -71,7 +71,7 @@ public class TreatmentPlansController(
         int id,
         UpdateTreatmentPlanRequest request)
     {
-        var result = await _treatmentPlanService.UpdateAsync(id, request);
+        var result = await _treatmentPlanService.UpdateAsync(id, request, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok(result.Value)
@@ -84,7 +84,7 @@ public class TreatmentPlansController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
-        var result = await _treatmentPlanService.DeleteAsync(id);
+        var result = await _treatmentPlanService.DeleteAsync(id, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok()

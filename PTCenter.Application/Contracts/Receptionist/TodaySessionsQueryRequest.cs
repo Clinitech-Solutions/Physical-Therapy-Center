@@ -10,5 +10,6 @@ namespace PTCenter.Application.Contracts.Receptionist
         public string? Search { get; set; }
         public string? DoctorId { get; set; }
         public int? RoomId { get; set; }
+        public DateOnly? Date { get; set; }
     }
 }

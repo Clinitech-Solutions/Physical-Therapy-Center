@@ -21,23 +21,24 @@ public class DoctorWorkspaceService(ApplicationDbContext db, BookingService book
     private static DoctorVisit Visit(Appointment a) => new(a.Id, a.PatientId, a.Patient.ApplicationUser.FullName,
         a.Patient.ApplicationUser.PhoneNumber, a.Patient.ApplicationUser.Gender.ToString(), a.TreatmentPlanSession?.TreatmentPlanId,
         a.TreatmentPlanSessionId, a.TreatmentPlanSession?.SessionNumber, a.TreatmentPlanSession?.TreatmentPlan.TreatmentType,
-        a.DoctorId, a.Doctor?.FullName, a.RoomId, a.Room?.Name, a.StartTime, a.EndTime, a.ActualCheckIn, a.ActualCheckOut,
-        a.TreatmentStartedAt, a.TreatmentEndedAt, State(a));
+        a.DoctorId ?? a.SeniorId, a.Doctor?.FullName, a.RoomId, a.Room?.Name, a.StartTime, a.EndTime, a.ActualCheckIn, a.ActualCheckOut,
+        a.TreatmentStartedAt, a.TreatmentEndedAt, State(a)) { CoveringTreatment = a.SeniorId != null };
     public async Task<DoctorScheduleResponse> ScheduleAsync(DateOnly date, string actor, bool supervisor, string? doctorId = null)
     {
         if (!supervisor && doctorId != null && doctorId != actor) throw new ClinicalRuleException("Doctor.AccessDenied", "Only your assigned schedule is available.", 403);
-        var noon = date.ToDateTime(new(12, 0));
-        var range = ClinicCalendar.UtcDay(new DateTimeOffset(noon, ClinicCalendar.Zone.GetUtcOffset(noon)));
+        var range = ClinicCalendar.UtcDay(date);
         var query = Visits.AsNoTracking().Where(a => a.AppointmentType == "Session");
-        if (!supervisor || doctorId != null) query = query.Where(a => a.DoctorId == (supervisor ? doctorId : actor));
+        if (!supervisor || doctorId != null) query = query.Where(a => a.DoctorId == (supervisor ? doctorId : actor) || a.SeniorId == (supervisor ? doctorId : actor));
         var appointments = await query.Where(a => a.StartTime >= range.Start && a.StartTime < range.End).OrderBy(a => a.StartTime).ThenBy(a => a.Id).ToListAsync();
         var active = await query.Where(a => a.TreatmentStartedAt != null && a.TreatmentEndedAt == null).OrderBy(a => a.TreatmentStartedAt).ToListAsync();
-        return new(date, appointments.Select(Visit).ToList(), active.Select(Visit).ToList());
+        var absences = await db.DoctorAbsences.AsNoTracking().Where(x => !x.Withdrawn).ToListAsync();
+        DoctorVisit WithAbsence(Appointment a) => Visit(a) with { NeedsAttention = ClinicianAbsenceRules.Unstarted(a) && absences.Any(x=>x.DoctorId==(a.DoctorId??a.SeniorId)&&ClinicianAbsenceRules.Overlaps(x,a.StartTime,a.EndTime)) };
+        return new(date, appointments.Select(WithAbsence).ToList(), active.Select(WithAbsence).ToList());
     }
     public async Task<Appointment> AssignedAsync(int id, string actor, bool supervisor)
     {
         var a = await Visits.SingleOrDefaultAsync(a => a.Id == id) ?? throw new ClinicalRuleException("Doctor.NotFound", "The assigned treatment appointment was not found.", 404);
-        if (!supervisor && a.DoctorId != actor) throw new ClinicalRuleException("Doctor.AccessDenied", "Only the assigned Doctor can access this session.", 403);
+        if (!supervisor && a.DoctorId != actor && a.SeniorId != actor) throw new ClinicalRuleException("Doctor.AccessDenied", "Only the assigned treating clinician can access this session.", 403);
         if (a.AppointmentType != "Session" || a.TreatmentPlanSession == null) throw new ClinicalRuleException("Doctor.TreatmentRequired", "Select a saved treatment session.");
         return a;
     }
@@ -78,7 +79,9 @@ public class DoctorWorkspaceService(ApplicationDbContext db, BookingService book
         var review = await db.ReassessmentRequests.AnyAsync(r => r.TreatmentPlanId == plan.Id && r.ReviewRequired);
         var requests = await new ReassessmentService(db, bookings, this).ListAsync(actor, supervisor, false, plan.Id);
         var notes=await NotesAsync(id);
-        return new(Visit(a), a.Patient.ApplicationUser.BirthDate,
+        var absences=await db.DoctorAbsences.AsNoTracking().Where(x=>x.DoctorId==(a.DoctorId??a.SeniorId)&&!x.Withdrawn).ToListAsync();
+        var visit=Visit(a) with { DoctorName=await db.Users.Where(u=>u.Id==(a.DoctorId??a.SeniorId)).Select(u=>u.FullName).SingleOrDefaultAsync(), NeedsAttention=ClinicianAbsenceRules.Unstarted(a)&&absences.Any(x=>ClinicianAbsenceRules.Overlaps(x,a.StartTime,a.EndTime)) };
+        return new(visit, a.Patient.ApplicationUser.BirthDate,
             new(plan.Id, plan.Assessment.Diagnosis, plan.Assessment.ConditionType, plan.Assessment.Notes, plan.Assessment.CompletedAt,
                 plan.Assessment.Senior.FullName, plan.TreatmentType, plan.Exercises, plan.NumberOfSessions, booked, completed,
                 plan.FrequencyPerWeek, plan.Doctor.FullName, review), notes, await PreviousAsync(plan.Id, notes.Version == 0 && a.Status == AppointmentStatus.Completed ? null : id),
@@ -95,6 +98,7 @@ public class DoctorWorkspaceService(ApplicationDbContext db, BookingService book
             if (a.Status != AppointmentStatus.InProgress || a.ActualCheckIn == null || a.ActualCheckOut != null)
                 throw new ClinicalRuleException("Doctor.ArrivalRequired", "Ask Reception to record this patient's arrival before starting treatment.");
             var gate = await new CourseFinanceService(db).GateAsync(id);
+            await bookings.RequireNotAbsentAsync(a);
             if (!gate.CanStart) throw new ClinicalRuleException(gate.PricingMode == "Review" ? "Booking.FinancialAgreementRequired" : "Booking.PaymentCoverageRequired", "Ask Reception to collect the exact patient shortfall before treatment.", 409, gate);
             await bookings.ValidateDoctorStartAsync(a, Now);
             a.TreatmentStartedAt = Now; a.TreatmentStartedBy = actor;

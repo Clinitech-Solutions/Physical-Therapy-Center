@@ -23,7 +23,7 @@ public class BookingRequest
 }
 
 public record InstallmentRequest(DateOnly DueDate, decimal Amount);
-public record CollectBookingPaymentRequest(string IdempotencyKey, decimal Amount, PaymentMethod? Method);
+public record CollectBookingPaymentRequest(string IdempotencyKey, decimal Amount, PaymentMethod? Method, string? ExpectedAllocationHash = null);
 public record BookingAccount(string Key, int PatientId, string PatientName, string PricingMode, decimal TotalAmount, decimal Discount,
     decimal PatientAmount, decimal InsuranceAmount, decimal PaidAmount, decimal RemainingAmount, List<int> InvoiceIds, List<InstallmentRequest> Installments);
 public record BookingAssessment(int Id, DateTime AssessmentDate, DateTime? CompletedAt, string Diagnosis);
@@ -81,3 +81,7 @@ public class CompleteAssessmentRequest
     public string TreatmentType { get; set; } = "PhysicalTherapy";
     public string? Exercises { get; set; }
 }
+
+public record AssessmentWorkspace(int AppointmentId, int PatientId, DateTime StartTime, DateTime? ArrivedAt, DateTime? DepartedAt,
+    DateTime? CompletedAt, string Diagnosis, string? Notes, int NumberOfSessions, int FrequencyPerWeek, string? DoctorId,
+    string? Exercises, string TreatmentType);

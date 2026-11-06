@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PTCenter.Application.Abstractions;
 using PTCenter.Application.Contracts.TreatmentPlans;
 using PTCenter.Application.Contracts.TreatmentPlanSession;
@@ -17,8 +17,12 @@ public class TreatmentPlanSessionService(
     private readonly ApplicationDbContext _context = context;
 
     public async Task<Result<TreatmentPlanSessionResponse>> AddAsync(
-        CreateTreatmentPlanSessionRequest request)
+        CreateTreatmentPlanSessionRequest request, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
+        var denied = await new LegacyClinicalRules(_context).PlanAsync(request.TreatmentPlanId, actor, supervisor, true);
+        if (denied != null) return Result.Failure<TreatmentPlanSessionResponse>(denied);
         if (request.PaymentStatus != PaymentStatus.Pending || request.Status != SessionStatus.Pending || request.CheckIn != null || request.CheckOut != null || request.SessionDate != null)
             return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedSession", "Create an unbooked session here. Scheduling, actual attendance and payment coverage are recorded through the booking workflow.", 400));
         if (request.SessionNumber <= 0)
@@ -63,6 +67,7 @@ public class TreatmentPlanSessionService(
 
         var session = new TreatmentPlanSession
         {
+            CreatedBy = actor,
             TreatmentPlanId = request.TreatmentPlanId,
             SessionNumber = request.SessionNumber,
             SessionDate = request.SessionDate,
@@ -79,6 +84,7 @@ public class TreatmentPlanSessionService(
 
         await UpdateCompletedSessionsAsync(request.TreatmentPlanId);
 
+        await transaction.CommitAsync();
         return await GetByIdAsync(session.Id);
     }
 
@@ -133,8 +139,10 @@ public class TreatmentPlanSessionService(
 
     public async Task<Result<TreatmentPlanSessionResponse>> UpdateAsync(
         int id,
-        UpdateTreatmentPlanSessionRequest request)
+        UpdateTreatmentPlanSessionRequest request, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         if (request.SessionNumber <= 0)
         {
             return Result.Failure<TreatmentPlanSessionResponse>(
@@ -150,6 +158,8 @@ public class TreatmentPlanSessionService(
                 TreatmentPlanSessionErrors.SessionNotFound);
         }
 
+        var denied = await new LegacyClinicalRules(_context).PlanAsync(session.TreatmentPlanId, actor, supervisor, true);
+        if (denied != null) return Result.Failure<TreatmentPlanSessionResponse>(denied);
         if (session.Status == SessionStatus.Completed && request.Notes != session.Notes)
             return Result.Failure<TreatmentPlanSessionResponse>(new("Doctor.Finalized", "Finalized treatment notes are read-only; no correction history is implemented.", 409));
 
@@ -194,6 +204,7 @@ public class TreatmentPlanSessionService(
             return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedAttendance", "Use the appointment reschedule and explicit check-in/check-out actions. Session notes remain editable here.", 400));
         if (request.SessionNumber != session.SessionNumber && await _context.Appointments.AnyAsync(a => a.TreatmentPlanSessionId == id))
             return Result.Failure<TreatmentPlanSessionResponse>(new("Booking.ManagedSession", "A booked session allocation cannot be renumbered.", 409));
+        session.UpdatedBy = actor;
         session.SessionNumber = request.SessionNumber;
         session.SessionDate = request.SessionDate;
         session.CheckIn = request.CheckIn;
@@ -206,11 +217,14 @@ public class TreatmentPlanSessionService(
 
         await UpdateCompletedSessionsAsync(session.TreatmentPlanId);
 
+        await transaction.CommitAsync();
         return await GetByIdAsync(id);
     }
 
-    public async Task<Result> DeleteAsync(int id)
+    public async Task<Result> DeleteAsync(int id, string actor, bool supervisor)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         var session = await _context.TreatmentPlanSessions
             .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -220,7 +234,10 @@ public class TreatmentPlanSessionService(
                 TreatmentPlanSessionErrors.SessionNotFound);
         }
 
+        var denied = await new LegacyClinicalRules(_context).PlanAsync(session.TreatmentPlanId, actor, supervisor, true);
+        if (denied != null) return Result.Failure(denied);
         var treatmentPlanId = session.TreatmentPlanId;
+        session.DeletedBy = actor;
         if (await _context.Appointments.AnyAsync(a => a.TreatmentPlanSessionId == id))
             return Result.Failure(new("Booking.ManagedSession", "A session linked to a booking cannot be deleted. Reschedule its appointment instead.", 409));
 
@@ -232,7 +249,8 @@ public class TreatmentPlanSessionService(
 
             await UpdateCompletedSessionsAsync(treatmentPlanId);
 
-            return Result.Success();
+            await transaction.CommitAsync();
+        return Result.Success();
         }
         catch
         {

@@ -68,7 +68,7 @@ public partial class BookingService(ApplicationDbContext db)
                     Math.Max(0, p.NumberOfSessions - used.Select(a => a.TreatmentPlanSessionId).Distinct().Count() -
                         sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed && !used.Any(a => a.TreatmentPlanSessionId == s.Id))))
                 { FrequencyPerWeek = p.FrequencyPerWeek is >=1 and <=7 ? p.FrequencyPerWeek : null,
-                  BookedStartsAt = used.Where(a=>a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow).Select(a=>a.StartTime).ToList() };
+                  BookedStartsAt = used.Where(a=>a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow).Select(a=>a.StartTime).OrderBy(t=>t).ToList() };
             }).ToList()) { ApprovedSessions = info?.ApprovedSessions };
         var finance = new CourseFinanceService(db);
         var reviews = await db.ReassessmentRequests.AsNoTracking().Where(r => r.PatientId == patientId && r.ReviewRequired).Select(r => new {r.TreatmentPlanId,r.RevisedPlanId}).ToListAsync();
@@ -292,14 +292,20 @@ public partial class BookingService(ApplicationDbContext db)
             ?? throw Rule("AppointmentNotFound", "Appointment was not found.", 404);
         RequireUpcoming(appointment);
         var originallyInsured = appointment.InsuranceFunded || await db.Invoices.AnyAsync(i => i.AppointmentId == id && i.InsuranceAmount > 0);
-        var preview = await PreviewCoreAsync(new BookingRequest { PatientId = appointment.PatientId, ClinicianId = request.ClinicianId,
+        var retainedRecovery=request.ClinicianId==(appointment.DoctorId??appointment.SeniorId)&&await HasRecoveryAssignmentAsync(appointment);
+        var seniorCoverage=retainedRecovery&&appointment.SeniorId!=null;
+        if(retainedRecovery)await ValidateRetainedRecoveryAsync(appointment,request.StartTime.UtcDateTime,request.RoomId);
+        else{var preview = await PreviewCoreAsync(new BookingRequest { PatientId = appointment.PatientId, ClinicianId = request.ClinicianId,
             RoomId = request.RoomId, StartsAt = [request.StartTime], TreatmentPlanId = appointment.TreatmentPlanSession?.TreatmentPlanId }, id, false, originallyInsured);
         if (!preview.CanSave) throw Rule("Validation", string.Join(", ", preview.Errors.Concat(preview.Appointments.SelectMany(s => s.Conflicts))), 409);
+        var fullInterval=await RecoveryConflicts(appointment,request.ClinicianId,appointment.AppointmentType=="Session"?"Doctor":"Senior",request.StartTime.UtcDateTime,request.RoomId);
+        if(fullInterval.Count>0)throw Rule("Validation",string.Join(", ",fullInterval),409);}
         var context = await ContextAsync(appointment.PatientId);
         if (context.HasCompletedAssessment != (appointment.AppointmentType == "Session")) throw Rule("AssessmentOnly", "This appointment no longer matches the patient's clinical stage.");
-        appointment.StartTime = request.StartTime.UtcDateTime; appointment.EndTime = appointment.StartTime.AddMinutes(60);
-        appointment.DoctorId = appointment.AppointmentType == "Session" ? request.ClinicianId : null;
-        appointment.SeniorId = appointment.AppointmentType == "Assessment" ? request.ClinicianId : null;
+        var duration=appointment.EndTime-appointment.StartTime;
+        appointment.StartTime = request.StartTime.UtcDateTime; appointment.EndTime = appointment.StartTime+duration;
+        appointment.DoctorId = appointment.AppointmentType == "Session" && !seniorCoverage ? request.ClinicianId : null;
+        appointment.SeniorId = appointment.AppointmentType == "Assessment" || seniorCoverage ? request.ClinicianId : null;
         appointment.RoomId = request.RoomId;
         if (appointment.TreatmentPlanSession != null) appointment.TreatmentPlanSession.SessionDate = appointment.StartTime;
         await db.SaveChangesAsync(); await transaction.CommitAsync();
@@ -352,10 +358,12 @@ public partial class BookingService(ApplicationDbContext db)
         var courseId = await CourseIdAsync(accountKey);
         if (courseId != null)
         {
+            await ValidateAllocationAsync(accountKey, request, "course:");
             await new CourseFinanceService(db).CollectAsync(courseId.Value, request.IdempotencyKey, request.Amount, request.Method.Value);
             await transaction.CommitAsync(); return await AnyCourseReceiptAsync(courseId.Value);
         }
         var batch = await db.BookingBatches.SingleOrDefaultAsync(b => b.IdempotencyKey == accountKey) ?? throw Rule("BookingNotFound", "Booking account was not found.", 404);
+        await ValidateAllocationAsync(accountKey, request, "package:");
         var prefix = $"package:{request.IdempotencyKey}:";
         var previous = await db.Payments.Include(p => p.Invoice).ThenInclude(i => i.Appointment).Where(p => p.IdempotencyKey != null && p.IdempotencyKey.StartsWith(prefix)).ToListAsync();
         if (previous.Count > 0)
@@ -382,6 +390,13 @@ public partial class BookingService(ApplicationDbContext db)
         await db.SaveChangesAsync(); await transaction.CommitAsync(); return await ReceiptAsync(accountKey);
     }
 
+    private async Task ValidateAllocationAsync(string accountKey, CollectBookingPaymentRequest request,string prefix)
+    {
+        if(request.ExpectedAllocationHash==null || await db.Payments.AnyAsync(p=>p.IdempotencyKey!=null && p.IdempotencyKey.StartsWith(prefix+request.IdempotencyKey+":"))) return;
+        var preview=await new BillingAllocationService(db).PreviewAsync(accountKey,request.Amount);
+        if(preview.Hash!=request.ExpectedAllocationHash) throw Rule("StaleBalance","The account allocation changed. Review the refreshed allocation before collecting.",409);
+    }
+
     public async Task TransitionAsync(int id, AppointmentStatus status)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
@@ -392,6 +407,7 @@ public partial class BookingService(ApplicationDbContext db)
         if (appointment.Status == status) return; // A replay cannot stamp new actual times or complete a session twice.
         if (status == AppointmentStatus.InProgress && appointment.Status == AppointmentStatus.Pending)
         {
+            if (appointment.AppointmentType != "Session") await RequireNotAbsentAsync(appointment);
             if (appointment.TreatmentStartedAt != null || appointment.TreatmentEndedAt != null || appointment.ActualCheckOut != null ||
                 appointment.TreatmentPlanSession is { Status: not SessionStatus.Pending })
                 throw Rule("ClinicalStateReviewRequired", "This session has existing clinical activity. Review its history instead of reopening it through arrival.", 409);
@@ -417,8 +433,7 @@ public partial class BookingService(ApplicationDbContext db)
                 throw Rule("TreatmentNotFinished", "The assigned Doctor must explicitly end treatment before patient departure.", 409);
             appointment.ActualCheckOut = DateTime.UtcNow;
             if (appointment.TreatmentPlanSession is { } session) session.CheckOut = appointment.ActualCheckOut;
-            if (appointment.AppointmentType != "Session")
-                foreach (var invoice in await db.Invoices.Where(i => i.AppointmentId == id).ToListAsync()) invoice.DeliveredAt = appointment.ActualCheckOut;
+            // Physical departure does not sign or deliver an assessment. Clinical signoff owns DeliveredAt.
         }
         else if ((status == AppointmentStatus.Cancelled || status == AppointmentStatus.NoShow) && appointment.Status == AppointmentStatus.Pending) { }
         else throw Rule("InvalidTransition", "This status transition is not allowed. Check-in and check-out are separate staff actions.", 409);
@@ -440,28 +455,50 @@ public partial class BookingService(ApplicationDbContext db)
         var patient = await PatientAsync(appointment.PatientId);
         if (!(await CliniciansForAsync(patient, "Doctor")).Any(c => c.Id == request.DoctorId)) throw Rule("ClinicianEligibility", "Select an eligible Doctor matching the patient's gender.");
         var existing = await db.Assessments.Include(a => a.TreatmentPlan).SingleOrDefaultAsync(a => a.AppointmentId == appointment.Id);
-        if (existing != null)
+        if (existing?.CompletedAt != null)
         {
             var saved = existing.TreatmentPlan;
             if (saved == null || existing.Diagnosis != request.Diagnosis.Trim() || saved.DoctorId != request.DoctorId || saved.NumberOfSessions != request.NumberOfSessions || saved.FrequencyPerWeek != request.FrequencyPerWeek || saved.Exercises != request.Exercises || saved.TreatmentType != request.TreatmentType)
                 throw Rule("AssessmentAlreadyCompleted", "This assessment has already been completed with different details.", 409);
             return (await ContextAsync(appointment.PatientId)).Plans.Single(p => p.Id == saved.Id);
         }
-        var assessment = new Assessment { AppointmentId = appointment.Id, PatientId = patient.Id, SeniorId = appointment.SeniorId!,
-            Diagnosis = request.Diagnosis.Trim(), ConditionType = request.TreatmentType, Priority = "Routine", CompletedAt = DateTime.UtcNow, AssessmentDate = DateTime.UtcNow };
-        var plan = new TreatmentPlan { Assessment = assessment, DoctorId = request.DoctorId, NumberOfSessions = request.NumberOfSessions,
-            FrequencyPerWeek = request.FrequencyPerWeek, TreatmentType = request.TreatmentType, Exercises = request.Exercises, Status = StatusPlan.Active };
-        for (var i = 1; i <= request.NumberOfSessions; i++) plan.Sessions.Add(new TreatmentPlanSession { SessionNumber = i });
-        db.TreatmentPlans.Add(plan);
+        var assessment = existing ?? new Assessment { AppointmentId = appointment.Id, PatientId = patient.Id, SeniorId = appointment.SeniorId!, CreatedBy = actor };
+        assessment.Diagnosis = request.Diagnosis.Trim(); assessment.ConditionType = request.TreatmentType;
+        assessment.Priority = "Routine"; assessment.CompletedAt = DateTime.UtcNow; assessment.AssessmentDate = DateTime.UtcNow; assessment.UpdatedBy = actor;
+        var plan = existing?.TreatmentPlan;
+        if (plan != null)
+        {
+            await db.Entry(plan).Collection(p=>p.Sessions).LoadAsync();
+            if (plan.Sessions.Any(s=>s.SessionNumber>request.NumberOfSessions)) throw Rule("DraftPlanReview", "Review the allocated draft sessions before reducing the prescription.",409);
+        }
+        else { plan = new TreatmentPlan { Assessment=assessment, CreatedBy=actor }; db.TreatmentPlans.Add(plan); }
+        plan.DoctorId=request.DoctorId; plan.NumberOfSessions=request.NumberOfSessions; plan.FrequencyPerWeek=request.FrequencyPerWeek;
+        plan.TreatmentType=request.TreatmentType; plan.Exercises=request.Exercises; plan.Status=StatusPlan.Active; plan.UpdatedBy=actor;
+        for (var i = 1; i <= request.NumberOfSessions; i++) if(!plan.Sessions.Any(s=>s.SessionNumber==i)) plan.Sessions.Add(new TreatmentPlanSession { SessionNumber = i });
+        await MarkAssessmentDeliveredAsync(appointment.Id, assessment.CompletedAt!.Value);
         await db.SaveChangesAsync(); await transaction.CommitAsync();
         return (await ContextAsync(patient.Id)).Plans.Single(p => p.Id == plan.Id);
     }
 
     public async Task CompleteExistingAssessmentAsync(int id, string actor, bool supervisor)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(db);
         var assessment = await db.Assessments.SingleOrDefaultAsync(a => a.Id == id) ?? throw Rule("AssessmentNotFound", "Assessment was not found.", 404);
         if (!supervisor && assessment.SeniorId != actor) throw Rule("AssessmentOwner", "Only the assigned Senior can sign off this assessment.", 403);
+        if (assessment.AppointmentId is int appointmentId)
+        {
+            var appointment = await db.Appointments.SingleAsync(a=>a.Id==appointmentId);
+            if (!supervisor && appointment.SeniorId != actor) throw Rule("AssessmentOwner", "Only the assigned Senior can sign off this assessment.", 403);
+            if (appointment.ActualCheckIn == null || appointment.Status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow)
+                throw Rule("AssessmentNotStarted", "Record arrival before clinical signoff.", 409);
+        }
         if (string.IsNullOrWhiteSpace(assessment.Diagnosis)) throw Rule("ClinicalDetailsRequired", "A saved diagnosis is required before completion.");
-        assessment.CompletedAt ??= DateTime.UtcNow; await db.SaveChangesAsync();
+        if (assessment.CompletedAt == null) {
+            assessment.CompletedAt = DateTime.UtcNow; assessment.UpdatedBy = actor;
+            if(assessment.AppointmentId is int signedAppointment) await MarkAssessmentDeliveredAsync(signedAppointment,assessment.CompletedAt.Value);
+            await db.SaveChangesAsync();
+        }
+        await transaction.CommitAsync();
     }
 }

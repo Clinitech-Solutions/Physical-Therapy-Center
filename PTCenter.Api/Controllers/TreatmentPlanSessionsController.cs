@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PTCenter.Api.Extensions;
 using PTCenter.Application.Contracts.TreatmentPlans;
@@ -12,7 +12,7 @@ namespace PTCenter.Api.Controllers;
 [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.StaffRead)]
 public class TreatmentPlanSessionsController(
     ITreatmentPlanSessionService treatmentPlanSessionService)
-    : ControllerBase
+    : ClinicalController
 {
     private readonly ITreatmentPlanSessionService _treatmentPlanSessionService =
         treatmentPlanSessionService;
@@ -28,7 +28,7 @@ public class TreatmentPlanSessionsController(
     public async Task<IActionResult> Add(
         CreateTreatmentPlanSessionRequest request)
     {
-        var result = await _treatmentPlanSessionService.AddAsync(request);
+        var result = await _treatmentPlanSessionService.AddAsync(request, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok(result.Value)
@@ -79,7 +79,7 @@ public class TreatmentPlanSessionsController(
         UpdateTreatmentPlanSessionRequest request)
     {
         var result =
-            await _treatmentPlanSessionService.UpdateAsync(id, request);
+            await _treatmentPlanSessionService.UpdateAsync(id, request, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok(result.Value)
@@ -93,7 +93,7 @@ public class TreatmentPlanSessionsController(
     public async Task<IActionResult> Delete(int id)
     {
         var result =
-            await _treatmentPlanSessionService.DeleteAsync(id);
+            await _treatmentPlanSessionService.DeleteAsync(id, Actor, Supervisor);
 
         return result.IsSuccess
             ? Ok()

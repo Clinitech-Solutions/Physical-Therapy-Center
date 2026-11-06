@@ -18,6 +18,9 @@ namespace PTCenter.Application.Contracts.Billing
         [Range(typeof(decimal), "0.01", "999999999")]
         public decimal Amount { get; set; }
 
+        [Range(typeof(decimal), "0", "999999999")]
+        public decimal? ExpectedRemaining { get; set; }
+
         [Required]
         public PaymentMethod? Method { get; set; }
     }

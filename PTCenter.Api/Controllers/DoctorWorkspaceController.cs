@@ -23,7 +23,7 @@ public abstract class ClinicalController : ControllerBase
     }
 }
 
-[ApiController, Route("api/Doctor"), Authorize(Roles = "Doctor,Ceo,Admin,Owner")]
+[ApiController, Route("api/Doctor"), Authorize(Roles = "Doctor,Senior,Ceo,Admin,Owner")]
 public class DoctorWorkspaceController(DoctorWorkspaceService service, ApplicationDbContext db, IWebHostEnvironment environment) : ClinicalController
 {
     [HttpGet("schedule")]

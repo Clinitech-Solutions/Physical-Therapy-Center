@@ -8,6 +8,33 @@ namespace PTCenter.Tests;
 
 public class BookingMigrationTests
 {
+    [Fact] public void Merged_migration_chain_retains_registration_cheque_and_clinical_models_without_schema_drift()
+    {
+        using var db=new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=MergeDesignOnly;Trusted_Connection=True").Options);
+        Assert.False(db.Database.HasPendingModelChanges());
+        var chain=db.Database.GetMigrations().ToArray();
+        var retained=new[]{"20261031164400_DoctorClinicalWorkspace","20261104195622_ClinicianAbsenceRecovery",
+            "20261106140342_ReleaseReadinessPatientRegistration","20261106160811_InsuranceChequeReceipts"};
+        Assert.Equal(retained,chain.Where(retained.Contains).ToArray());
+        Assert.Equal(retained[^1],chain[^1]);
+        var sql=db.GetService<IMigrator>().GenerateScript(retained[1],retained[3],MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Contains("[RegistrationOperationKey]",sql);
+        Assert.Contains("CREATE UNIQUE INDEX [IX_Patients_RegistrationOperationKey]",sql);
+        Assert.Contains("CREATE TABLE [InsuranceChequeReceipts]",sql);
+        Assert.Contains("CREATE TABLE [InsuranceClaimSubmissions]",sql);
+        Assert.Contains("[InsuranceServiceMonth] date NULL",sql);
+        foreach(var forbidden in new[]{"DROP TABLE","DROP COLUMN","ALTER COLUMN","UPDATE [","DELETE FROM","TRUNCATE","ON DELETE CASCADE","INSERT INTO [Invoices]","INSERT INTO [Payments]"})Assert.DoesNotContain(forbidden,sql);
+    }
+
+    [Fact] public void Absence_recovery_migration_is_additive_and_preserves_legacy_day_absences_and_finances()
+    {
+        using var db=new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=AbsenceDesignOnly;Trusted_Connection=True").Options);
+        Assert.False(db.Database.HasPendingModelChanges());
+        var sql=db.GetService<IMigrator>().GenerateScript("20261031164400_DoctorClinicalWorkspace","20261104195622_ClinicianAbsenceRecovery",MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Contains("[StartsAt] datetime2 NULL",sql);Assert.Contains("[EndsAt] datetime2 NULL",sql);Assert.Contains("DEFAULT N'[]'",sql);Assert.Contains("[ConsentRecordedAt]",sql);
+        foreach(var forbidden in new[]{"DROP TABLE","DROP COLUMN","ALTER COLUMN","UPDATE [","DELETE FROM","TRUNCATE","ON DELETE CASCADE","INSERT INTO [Invoices]","INSERT INTO [Payments]"})Assert.DoesNotContain(forbidden,sql);
+    }
     [Fact] public void Doctor_migration_is_additive_and_does_not_infer_history_or_touch_financial_records()
     {
         using var db=new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=DoctorDesignOnly;Trusted_Connection=True").Options);

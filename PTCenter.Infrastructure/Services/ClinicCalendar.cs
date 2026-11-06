@@ -13,8 +13,10 @@ public static class ClinicCalendar
     public static (DateTime Start, DateTime End) UtcDay(DateTimeOffset instant)
     {
         var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, Zone).DateTime);
-        return (Start(day), Start(day.AddDays(1)));
+        return UtcDay(day);
     }
+    public static (DateTime Start, DateTime End) UtcDay(DateOnly day) => (Start(day), Start(day.AddDays(1)));
+    public static DateTime DayStart(DateOnly day) => Start(day);
     private static DateTime Start(DateOnly day)
     {
         var local = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);

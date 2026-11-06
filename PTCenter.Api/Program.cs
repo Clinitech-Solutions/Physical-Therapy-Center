@@ -4,6 +4,7 @@ using PTCenter.Infrastructure;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSingleton(TimeProvider.System);
 
 // Add services to the container.
 builder.Services

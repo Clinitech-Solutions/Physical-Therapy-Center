@@ -34,5 +34,10 @@ public class CourseFinanceController(ApplicationDbContext db) : ControllerBase
     public Task<IActionResult> Claim(SubmitInsuranceClaimRequest request) => Execute(() => finance.SubmitClaimAsync(request, User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ""));
     [HttpPost("insurance/claims/{id:int}/settlements")]
     [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Administration)]
-    public Task<IActionResult> Settle(int id, SettleInsuranceClaimRequest request) => Execute(async () => new { paymentId = await finance.SettleClaimAsync(id, request) });
+    public Task<IActionResult> Settle(int id, SettleInsuranceClaimRequest request) => Execute(async () => {
+        // Recover historical operations without allowing new receipts to bypass cheque metadata/review.
+        if (!await db.Payments.AnyAsync(p=>p.IdempotencyKey=="insurer:"+request.IdempotencyKey))
+            throw new BookingRuleException("Insurance.ChequeRequired","Record new insurer collections through the reviewed cheque receipt workflow. Historical receipts remain available.",409);
+        return new { paymentId = await finance.SettleClaimAsync(id, request) };
+    });
 }
