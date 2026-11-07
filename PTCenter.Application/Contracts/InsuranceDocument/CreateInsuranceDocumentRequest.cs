@@ -5,5 +5,6 @@ namespace PTCenter.Application.Contracts.InsuranceDocument;
 public class CreateInsuranceDocumentRequest
 {
     public int PatientId { get; set; }
+    public string? IdempotencyKey { get; set; }
     public List<IFormFile> Files { get; set; } = new();
 }

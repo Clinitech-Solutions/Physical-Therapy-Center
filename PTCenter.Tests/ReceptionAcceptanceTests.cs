@@ -31,7 +31,7 @@ public sealed partial class BookingDatabaseTests
         var third=Treatment(plan,1);third.StartsAt=[start.AddDays(2)];
         Assert.Contains("WeeklyFrequencyLimit",(await service.PreviewAsync(third)).Appointments.Single().Conflicts);
         Assert.Equal("Booking.Validation",(await Assert.ThrowsAsync<BookingRuleException>(()=>service.CreateAsync(third))).Code);
-        await service.TransitionAsync(first.Appointments[0].Id,AppointmentStatus.Cancelled);
+        await service.CloseUnattendedAsync(first.Appointments[0].Id, false, new(Guid.NewGuid().ToString(), "Synthetic patient requested cancellation"), "reception");
         Assert.True((await service.PreviewAsync(third)).CanSave);
         (await db.TreatmentPlans.FindAsync(plan))!.FrequencyPerWeek=0;await db.SaveChangesAsync();
         Assert.Contains("FrequencyRequired",(await service.PreviewAsync(third)).Errors);
@@ -42,7 +42,7 @@ public sealed partial class BookingDatabaseTests
         var plan=await PlanAsync(2);var receipt=await service.CreateAsync(Treatment(plan,2));
         Assert.DoesNotContain((await service.DirectoryAsync()).Items,p=>p.Id==patientId);
         Assert.True(await db.Patients.AnyAsync(p=>p.Id==patientId));
-        await service.TransitionAsync(receipt.Appointments[0].Id,AppointmentStatus.Cancelled);
+        await service.CloseUnattendedAsync(receipt.Appointments[0].Id, false, new(Guid.NewGuid().ToString(), "Synthetic patient requested cancellation"), "reception");
         Assert.Contains((await service.DirectoryAsync()).Items,p=>p.Id==patientId);
         await service.CreateAsync(Treatment(plan,1));
         await PlanAsync(2);

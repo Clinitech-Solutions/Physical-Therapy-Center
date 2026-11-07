@@ -16,16 +16,68 @@ public class PatientRegistrationHttpTests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters={new JsonStringEnumConverter()} };
     [Fact]
+    public async Task Unused_patient_can_be_deleted_but_linked_history_and_identity_remain_visible()
+    {
+        using var host = new BookingTestHost();
+        using var client = host.CreateClient(new() { BaseAddress = new("https://localhost") });
+        await ReceptionAccessFixture.SeedAsync(host); await ReceptionAccessFixture.LoginAsync(client);
+        var added = await client.PostAsJsonAsync("/api/Patients/Add", new { fullName="Unused patient", phoneNumber="01012345678", birthDate="1990-01-01", gender=0, paymentType="Cash" });
+        Assert.Equal(HttpStatusCode.OK, added.StatusCode);
+        var unused = (await added.Content.ReadFromJsonAsync<PatientResponse>(Json))!;
+        Assert.Equal(HttpStatusCode.OK, (await client.DeleteAsync($"/api/Patients/Delete/{unused.Id}")).StatusCode);
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.True((await db.Patients.IgnoreQueryFilters().SingleAsync(p=>p.Id==unused.Id)).IsDeleted);
+        Assert.NotNull(await db.Users.FindAsync(unused.ApplicationUserId));
+        var linked = await db.Patients.AsNoTracking().FirstAsync();
+        var count = await db.Assessments.CountAsync();
+        Assert.Equal(HttpStatusCode.Conflict, (await client.DeleteAsync($"/api/Patients/Delete/{linked.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/Patients/GetById/{linked.Id}")).StatusCode);
+        Assert.Equal(count, await db.Assessments.CountAsync());
+        Assert.False((await db.Patients.IgnoreQueryFilters().AsNoTracking().SingleAsync(p=>p.Id==linked.Id)).IsDeleted);
+    }
+    [Fact]
+    public async Task Future_or_missing_birth_date_cannot_create_an_identity_or_change_an_existing_patient()
+    {
+        using var host = new BookingTestHost();
+        using var client = host.CreateClient(new() { BaseAddress = new("https://localhost") });
+        await ReceptionAccessFixture.SeedAsync(host);
+        await ReceptionAccessFixture.LoginAsync(client);
+        var tomorrow = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, ClinicCalendar.Zone).DateTime).AddDays(1);
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var patientCount = await db.Patients.CountAsync();
+        var userCount = await db.Users.CountAsync();
+        foreach (var date in new[] { tomorrow.ToString("yyyy-MM-dd"), "0001-01-01" })
+        {
+            var response = await client.PostAsJsonAsync("/api/Patients/Add", new { fullName = "Birth date regression", phoneNumber = "01012345678", birthDate = date, gender = 0, paymentType = "Cash", idempotencyKey = Guid.NewGuid().ToString() });
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        Assert.Equal(patientCount, await db.Patients.CountAsync());
+        Assert.Equal(userCount, await db.Users.CountAsync());
+        var patient = await db.Patients.AsNoTracking().Include(p => p.ApplicationUser).FirstAsync();
+        var rejected = await client.PutAsJsonAsync($"/api/Patients/Update/{patient.Id}", new { birthDate = tomorrow.ToString("yyyy-MM-dd"), phoneNumber = "01099999999" });
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        var unchanged = await db.Users.AsNoTracking().SingleAsync(u => u.Id == patient.ApplicationUserId);
+        Assert.Equal(patient.ApplicationUser.BirthDate, unchanged.BirthDate);
+        Assert.Equal(patient.ApplicationUser.PhoneNumber, unchanged.PhoneNumber);
+    }
+    [Fact]
     public async Task No_username_registration_preserves_real_email_and_concurrent_retries_create_one_patient()
     {
         using var host=new BookingTestHost();using var client=host.CreateClient(new(){BaseAddress=new("https://localhost")});await ReceptionAccessFixture.SeedAsync(host);await ReceptionAccessFixture.LoginAsync(client);
         var body=new{fullName="Registration regression",phoneNumber="01012345678",birthDate="1990-01-01",gender=0,paymentType="Cash",email="real.patient@example.invalid",idempotencyKey=Guid.NewGuid().ToString()};
         var results=await Task.WhenAll(client.PostAsJsonAsync("/api/Patients/Add",body),client.PostAsJsonAsync("/api/Patients/Add",body));Assert.All(results,r=>Assert.Equal(HttpStatusCode.OK,r.StatusCode));
         var a=(await results[0].Content.ReadFromJsonAsync<PatientResponse>(Json))!;var b=(await results[1].Content.ReadFromJsonAsync<PatientResponse>(Json))!;Assert.Equal(a.Id,b.Id);Assert.Equal(body.email,a.Email);
+        var recovered=await client.GetFromJsonAsync<PatientResponse>($"/api/Patients/GetByRegistrationKey/{body.idempotencyKey}",Json);
+        Assert.Equal(a.Id,recovered!.Id);
+        Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"/api/Patients/GetByRegistrationKey/{Guid.NewGuid()}")).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict,(await client.PostAsJsonAsync("/api/Patients/Add",body with {fullName="Changed intent"})).StatusCode);
         using var scope=host.Services.CreateScope();var db=scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();var p=await db.Patients.Include(p=>p.ApplicationUser).SingleAsync(p=>p.Id==a.Id);
         Assert.Matches("^patient\\.[a-f0-9]{32}$",p.ApplicationUser.UserName!);Assert.Equal(body.email,p.ApplicationUser.Email);Assert.Equal(3,await db.Patients.CountAsync());
         Assert.Equal("reception.selfpay",(await db.Users.FindAsync("access-selfpay"))!.UserName);Assert.Empty(await db.Appointments.ToListAsync());Assert.Empty(await db.Invoices.ToListAsync());
+        await ReceptionAccessFixture.LoginAsync(client,"Doctor");
+        Assert.Equal(HttpStatusCode.Forbidden,(await client.GetAsync($"/api/Patients/GetByRegistrationKey/{body.idempotencyKey}")).StatusCode);
     }
 
     private sealed class CollisionGenerator : IPatientUsernameGenerator

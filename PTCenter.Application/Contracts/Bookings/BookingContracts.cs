@@ -23,6 +23,7 @@ public class BookingRequest
 }
 
 public record InstallmentRequest(DateOnly DueDate, decimal Amount);
+public record UnattendedAppointmentRequest(string IdempotencyKey, string Reason);
 public record CollectBookingPaymentRequest(string IdempotencyKey, decimal Amount, PaymentMethod? Method, string? ExpectedAllocationHash = null);
 public record BookingAccount(string Key, int PatientId, string PatientName, string PricingMode, decimal TotalAmount, decimal Discount,
     decimal PatientAmount, decimal InsuranceAmount, decimal PaidAmount, decimal RemainingAmount, List<int> InvoiceIds, List<InstallmentRequest> Installments);

@@ -32,6 +32,7 @@ public static class InfrastructureExtensions
 
         private IServiceCollection AddServices()
         {
+            services.AddHttpContextAccessor();
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IPatientService, PatientService>();
             services.AddSingleton<IPatientUsernameGenerator, PatientUsernameGenerator>();

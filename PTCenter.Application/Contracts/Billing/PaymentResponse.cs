@@ -14,6 +14,8 @@ namespace PTCenter.Application.Contracts.Billing
         public int? InsuranceClaimId { get; set; }
         public string? PayerType { get; set; }
         public string? CollectionMethod { get; set; }
+        public string? RecordedBy { get; set; }
+        public string? RecordedByName { get; set; }
 
         public decimal Amount { get; set; }
 

@@ -11,14 +11,14 @@ public partial class BookingService
         db.TreatmentPlans.Any(plan=>plan.Assessment.PatientId==patient.Id && plan.Assessment.CompletedAt!=null && plan.Status==StatusPlan.Active &&
             plan.NumberOfSessions > db.TreatmentPlanSessions.Count(s=>s.TreatmentPlanId==plan.Id &&
                 (s.Status==SessionStatus.Completed || db.Appointments.Any(a=>a.TreatmentPlanSessionId==s.Id &&
-                    (a.ActualCheckIn!=null || a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow)))) &&
+                    (a.ActualCheckIn!=null || a.Status!=AppointmentStatus.Cancelled)))) &&
             (!db.TreatmentCourseAgreements.Any(c=>c.TreatmentPlanId==plan.Id) || db.TreatmentPlanSessions.Count(s=>s.TreatmentPlanId==plan.Id &&
                 (s.Status==SessionStatus.Completed || db.Appointments.Any(a=>a.TreatmentPlanSessionId==s.Id &&
-                    (a.ActualCheckIn!=null || a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow)))) <
+                    (a.ActualCheckIn!=null || a.Status!=AppointmentStatus.Cancelled)))) <
                 db.TreatmentCourseAgreements.Where(c=>c.TreatmentPlanId==plan.Id).Select(c=>c.CoveredSessions).FirstOrDefault())))
         .Where(patient=>patient.PaymentType!="Insurance" || !db.Assessments.Any(a=>a.PatientId==patient.Id && a.CompletedAt!=null) ||
             patient.InsuranceDetails!=null && patient.InsuranceDetails.ApprovedSessions > db.Appointments.Count(a=>a.PatientId==patient.Id && a.AppointmentType=="Session" &&
-                (a.InsuranceFunded || a.BookingBatchId==null) && (a.ActualCheckIn!=null || a.Status!=AppointmentStatus.Cancelled && a.Status!=AppointmentStatus.NoShow)));
+                (a.InsuranceFunded || a.BookingBatchId==null) && (a.ActualCheckIn!=null || a.Status!=AppointmentStatus.Cancelled)));
 
     private async Task<Dictionary<DateOnly,int>> WeeklyCountsAsync(int planId,int? exclude)
     {

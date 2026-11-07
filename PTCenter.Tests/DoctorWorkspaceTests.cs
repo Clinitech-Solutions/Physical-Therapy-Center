@@ -34,7 +34,7 @@ public sealed partial class BookingDatabaseTests
     {
         var request=Treatment(await PlanAsync(),1);request.UnitPrice=100;request.Deposit=100;request.PaymentMethod=PaymentMethod.Cash;
         var id=(await service.CreateAsync(request)).Appointments[0].Id;
-        await service.TransitionAsync(id,AppointmentStatus.InProgress);
+        await ArriveForTest(id);
         var arrival=await db.Appointments.Include(a=>a.TreatmentPlanSession).SingleAsync();
         Assert.NotNull(arrival.ActualCheckIn);Assert.Null(arrival.TreatmentStartedAt);Assert.Equal(SessionStatus.Pending,arrival.TreatmentPlanSession!.Status);
         Assert.Equal("Booking.TreatmentNotFinished",(await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(id,AppointmentStatus.Completed))).Code);
@@ -79,7 +79,7 @@ public sealed partial class BookingDatabaseTests
         var a=(await service.CreateAsync(await OtherTreatment(4,start))).Appointments[0].Id;
         var b=(await service.CreateAsync(await OtherTreatment(5,start.AddHours(1)))).Appointments[0].Id;
         var c=(await service.CreateAsync(await OtherTreatment(6,start.AddHours(4)))).Appointments[0].Id;
-        foreach(var id in new[]{a,b,c})await service.TransitionAsync(id,AppointmentStatus.InProgress);
+        foreach(var id in new[]{a,b,c})await ArriveForTest(id);
         var clinical=Clinical(start.AddHours(2).AddMinutes(5));await clinical.StartAsync(a,"doctor",false);await clinical.StartAsync(b,"doctor",false);
         var error=await Assert.ThrowsAsync<ClinicalRuleException>(()=>clinical.StartAsync(c,"doctor",false));Assert.Equal("Doctor.CapacityOrEligibility",error.Code);
         Assert.Equal(2,(await clinical.ScheduleAsync(DateOnly.FromDateTime(start.Date),"doctor",false)).ActiveTreatments.Count);
@@ -87,7 +87,7 @@ public sealed partial class BookingDatabaseTests
     [Fact] public async Task Patient_shortfall_still_blocks_start_while_insurer_outstanding_does_not()
     {
         var request=Treatment(await PlanAsync(3,true),1);request.UnitPrice=100;request.Deposit=20;request.PaymentMethod=PaymentMethod.Cash;
-        var id=(await service.CreateAsync(request)).Appointments[0].Id;await service.TransitionAsync(id,AppointmentStatus.InProgress);
+        var id=(await service.CreateAsync(request)).Appointments[0].Id;await ArriveForTest(id);
         var payment=await db.Payments.SingleAsync();payment.Status=PaymentStatus.Pending;await db.SaveChangesAsync();
         var blocked=await Assert.ThrowsAsync<ClinicalRuleException>(()=>Clinical().StartAsync(id,"doctor",false));
         Assert.Equal("Booking.PaymentCoverageRequired",blocked.Code);Assert.Equal(20,Assert.IsType<PaymentGate>(blocked.Details).AdditionalPaymentRequired);
@@ -133,7 +133,7 @@ public sealed partial class BookingDatabaseTests
         var a=await db.Appointments.SingleAsync();a.Status=AppointmentStatus.Completed;a.TreatmentPlanSession!.Status=SessionStatus.Completed;a.TreatmentPlanSession.Notes="Recorded historical clinical note";await db.SaveChangesAsync();
         var record=await Clinical().GetAsync(id,"doctor",false);Assert.Equal("LegacyCompleted",record.Visit.State);
         Assert.Null(record.Visit.TreatmentStartedAt);Assert.Null(record.Visit.TreatmentEndedAt);Assert.Null(record.Visit.DepartedAt);Assert.Equal("Recorded historical clinical note",record.Notes.ProgressNotes);Assert.Null(record.Notes.AuthorName);Assert.Null(record.Notes.SavedAt);
-        a.Status=AppointmentStatus.Pending;await db.SaveChangesAsync();Assert.Equal("Booking.ClinicalStateReviewRequired",(await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(id,AppointmentStatus.InProgress))).Code);Assert.Equal(SessionStatus.Completed,a.TreatmentPlanSession.Status);
+        a.Status=AppointmentStatus.Pending;await db.SaveChangesAsync();Assert.Equal("Booking.ClinicalStateReviewRequired",(await Assert.ThrowsAsync<BookingRuleException>(()=>ArriveForTest(id))).Code);Assert.Equal(SessionStatus.Completed,a.TreatmentPlanSession.Status);
     }
 
 }

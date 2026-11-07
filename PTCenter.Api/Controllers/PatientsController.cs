@@ -75,6 +75,14 @@ public class PatientsController(
             : result.ToProblem();
     }
 
+    [HttpGet("{key}")]
+    [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
+    public async Task<IActionResult> GetByRegistrationKey(string key)
+    {
+        var result=await _patientService.GetByRegistrationKeyAsync(key);
+        return result.IsSuccess ? Ok(result.Value) : result.ToProblem();
+    }
+
     [HttpDelete("{id:int}")]
     [Authorize(Roles = PTCenter.Api.Authorization.ReceptionPermissions.Operations)]
     [ProducesResponseType(StatusCodes.Status200OK)]

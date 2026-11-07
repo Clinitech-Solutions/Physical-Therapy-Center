@@ -28,6 +28,8 @@ public class PatientService(
 
     public async Task<Result<PatientResponse>> AddAsync(CreatePatientRequest request)
     {
+        if (!ValidBirthDate(request.BirthDate))
+            return Result.Failure<PatientResponse>(new("Patient.InvalidBirthDate", "Enter a valid birth date that is not in the future.", 400));
         var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
         var operation = request.IdempotencyKey;
         if (operation != null && (string.IsNullOrWhiteSpace(operation) || operation.Length > 100))
@@ -91,6 +93,9 @@ public class PatientService(
     private static bool UniqueCollision(DbUpdateException error) =>
         error.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } ||
         error.InnerException?.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool ValidBirthDate(DateTime birthDate) => birthDate != default &&
+        DateOnly.FromDateTime(birthDate) <= DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, ClinicCalendar.Zone).DateTime);
 
     // ========================= GET ALL PATIENTS =========================
 
@@ -179,10 +184,25 @@ public class PatientService(
 
     // ========================= UPDATE PATIENT =========================
 
+    public async Task<Result<PatientResponse>> GetByRegistrationKeyAsync(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key) || key.Length > 100)
+            return Result.Failure<PatientResponse>(new("Patient.RegistrationKey", "Invalid registration operation key.", 400));
+        await using var transaction=await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
+        var id=await _context.Patients.Where(p=>p.RegistrationOperationKey==key).Select(p=>(int?)p.Id).SingleOrDefaultAsync();
+        if(id==null)return Result.Failure<PatientResponse>(PatientErrors.PatientNotFound);
+        var patient=(await GetPatientResponseAsync(id.Value))!;
+        await transaction.CommitAsync();
+        return Result.Success(patient);
+    }
+
     public async Task<Result<PatientResponse>> UpdateAsync(
         int id,
         UpdatePatientRequest request)
     {
+        if (request.BirthDate is DateTime birthDate && !ValidBirthDate(birthDate))
+            return Result.Failure<PatientResponse>(new("Patient.InvalidBirthDate", "Enter a valid birth date that is not in the future.", 400));
         var patient = await _context.Patients
             .Include(x => x.InsuranceDetails)
             .FirstOrDefaultAsync(x => x.Id == id);
@@ -319,6 +339,8 @@ public class PatientService(
 
     public async Task<Result> DeleteAsync(int id)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await ClinicMutationLock.AcquireAsync(_context);
         var patient = await _context.Patients
             .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -328,8 +350,13 @@ public class PatientService(
                 PatientErrors.PatientNotFound);
         }
 
-        await using var transaction =
-            await _context.Database.BeginTransactionAsync();
+        // A soft deletion also hides related rows through patient query filters.
+        // Keep any patient with clinical, financial or document history visible.
+        if (await _context.Appointments.IgnoreQueryFilters().AnyAsync(a => a.PatientId == id) ||
+            await _context.Assessments.IgnoreQueryFilters().AnyAsync(a => a.PatientId == id) ||
+            await _context.Invoices.IgnoreQueryFilters().AnyAsync(i => i.PatientId == id) ||
+            await _context.InsuranceDocuments.IgnoreQueryFilters().AnyAsync(d => d.PatientId == id))
+            return Result.Failure(new("Patient.LinkedHistory", "This patient has linked history and cannot be deleted.", 409));
 
         try
         {

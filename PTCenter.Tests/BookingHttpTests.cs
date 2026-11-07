@@ -25,6 +25,7 @@ namespace PTCenter.Tests;
 public sealed class BookingTestHost : WebApplicationFactory<Program>
 {
     internal const string Key = "Local-test-key-only-never-valid-in-production-123456789";
+    public TestClinicClock Clock { get; } = new(new DateTimeOffset(2030, 2, 4, 10, 0, 0, TimeSpan.Zero));
     private readonly string databasePath = Path.Combine(Path.GetTempPath(), $"ptcenter-booking-tests-{Guid.NewGuid():N}.db");
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -34,6 +35,8 @@ public sealed class BookingTestHost : WebApplicationFactory<Program>
             ["Logging:LogLevel:Default"] = "Warning"
         }));
         builder.ConfigureServices(services => {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(Clock);
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options => {
                 options.TokenValidationParameters = new TokenValidationParameters {
                     ValidateIssuerSigningKey=true, IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Key)),

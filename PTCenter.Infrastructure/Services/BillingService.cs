@@ -92,7 +92,11 @@ public class BillingService(ApplicationDbContext context) : IBillingService
     public async Task<Result<List<PaymentResponse>>> GetPaymentsByInvoiceIdAsync(int invoiceId)
     {
         if (!await context.Invoices.AnyAsync(i => i.Id == invoiceId)) return Reject<List<PaymentResponse>>("InvoiceNotFound", "Invoice was not found.", 404);
-        return Result.Success((await context.Payments.AsNoTracking().Where(p => p.InvoiceId == invoiceId).OrderBy(p => p.Id).ToListAsync()).Select(MapPayment).ToList());
+        var rows=(await context.Payments.AsNoTracking().Where(p => p.InvoiceId == invoiceId).OrderBy(p => p.Id).ToListAsync()).Select(MapPayment).ToList();
+        var actors=rows.Where(p=>p.RecordedBy!=null).Select(p=>p.RecordedBy!).Distinct().ToArray();
+        var names=await context.Users.Where(u=>actors.Contains(u.Id)).ToDictionaryAsync(u=>u.Id,u=>u.FullName);
+        foreach(var row in rows)row.RecordedByName=row.RecordedBy==null?null:names.GetValueOrDefault(row.RecordedBy);
+        return Result.Success(rows);
     }
     private async Task<List<InvoiceResponse>> MapHistoryAsync(List<Invoice> invoices)
     {
@@ -115,5 +119,5 @@ public class BillingService(ApplicationDbContext context) : IBillingService
             PaymentMethod = i.Payments.LastOrDefault(p => p.Status == PaymentStatus.Paid)?.PaymentMethod.ToString() };
     }
     private static PaymentResponse MapPayment(Payment p) => new() { Id = p.Id, IdempotencyKey = p.IdempotencyKey, InvoiceId = p.InvoiceId, Amount = p.Amount, PaymentMethod = p.PaymentMethod, Status = p.Status, PaymentDate = p.PaymentDate, TransactionId = p.TransactionId,
-        PayerType = p.PayerType ?? (p.PaymentMethod == PaymentMethod.Insurance ? "Insurer" : "Patient"), CollectionMethod = p.CollectionMethod, InsuranceClaimId = p.InsuranceClaimId };
+        PayerType = p.PayerType ?? (p.PaymentMethod == PaymentMethod.Insurance ? "Insurer" : "Patient"), CollectionMethod = p.CollectionMethod, InsuranceClaimId = p.InsuranceClaimId, RecordedBy=p.CreatedBy };
 }

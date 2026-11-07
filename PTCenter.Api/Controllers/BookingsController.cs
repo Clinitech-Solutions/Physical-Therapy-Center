@@ -64,6 +64,10 @@ public class BookingsController(BookingService service, PTCenter.Infrastructure.
     [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
     public Task<IActionResult> CompleteAssessment(CompleteAssessmentRequest request) => Execute(() => service.CompleteAssessmentAsync(request,
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", User.IsInRole("Ceo") || User.IsInRole("Admin") || User.IsInRole("Owner")));
+    [HttpPut("assessments/draft")]
+    [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
+    public Task<IActionResult> SaveAssessmentDraft(CompleteAssessmentRequest request) => Execute(() => service.SaveAssessmentDraftAsync(request,
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", User.IsInRole("Ceo") || User.IsInRole("Admin") || User.IsInRole("Owner")));
     [HttpGet("assessments/tasks")]
     [Authorize(Roles = "Senior,Ceo,Admin,Owner")]
     public Task<IActionResult> AssessmentTasks() => Execute(() => service.AssessmentTasksAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)??"", User.IsInRole("Ceo")||User.IsInRole("Admin")||User.IsInRole("Owner")));

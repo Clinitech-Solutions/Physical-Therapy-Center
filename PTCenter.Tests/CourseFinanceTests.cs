@@ -29,9 +29,9 @@ public sealed partial class BookingDatabaseTests
         var receipt=await service.CreateAsync(request);Assert.Equal(price*2,receipt.PatientAmount);
         var id=receipt.Appointments[0].Id; var finance=new CourseFinanceService(db);
         Assert.Equal(price,(await finance.GateAsync(id)).AdditionalPaymentRequired);
-        await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(id,AppointmentStatus.InProgress));
+        await Assert.ThrowsAsync<BookingRuleException>(()=>ArriveForTest(id));
         await finance.CollectForAppointmentAsync(id,new(Guid.NewGuid().ToString(),price,PaymentMethod.Online));
-        await service.TransitionAsync(id,AppointmentStatus.InProgress);
+        await ArriveForTest(id);
         Assert.False((await finance.GateAsync(receipt.Appointments[1].Id)).CanStart);
     }
     [Fact] public async Task Package_is_reused_across_batches_and_rounding_sums_exactly()
@@ -49,20 +49,20 @@ public sealed partial class BookingDatabaseTests
     {
         var request=Treatment(await PlanAsync(4),3);request.PricingMode="Package";request.UnitPrice=500;request.Deposit=1000;request.PaymentMethod=PaymentMethod.Visa;
         var receipt=await service.CreateAsync(request);var finance=new CourseFinanceService(db);
-        foreach(var appointment in receipt.Appointments.Take(2)) {await service.TransitionAsync(appointment.Id,AppointmentStatus.InProgress);await FinishClinicalForTest(appointment.Id);await service.TransitionAsync(appointment.Id,AppointmentStatus.Completed);}
+        foreach(var appointment in receipt.Appointments.Take(2)) {await ArriveForTest(appointment.Id);await FinishClinicalForTest(appointment.Id);await service.TransitionAsync(appointment.Id,AppointmentStatus.Completed);}
         var third=receipt.Appointments[2].Id;var gate=await finance.GateAsync(third);
         Assert.False(gate.CanStart);Assert.Equal(500,gate.AdditionalPaymentRequired);Assert.Equal(1500,gate.RequiredCumulative);Assert.Equal(2,gate.ConsumedSessions);
-        await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(third,AppointmentStatus.InProgress));
+        await Assert.ThrowsAsync<BookingRuleException>(()=>ArriveForTest(third));
         var payment=new CollectBookingPaymentRequest(Guid.NewGuid().ToString(),500,PaymentMethod.Cash);
         Assert.True((await finance.CollectForAppointmentAsync(third,payment)).CanStart);
         await finance.CollectForAppointmentAsync(third,payment);Assert.Equal(1500,await db.Payments.SumAsync(p=>p.Amount));
         await Assert.ThrowsAsync<BookingRuleException>(()=>finance.CollectForAppointmentAsync(third,payment with {Amount=499}));
-        await service.TransitionAsync(third,AppointmentStatus.InProgress);
+        await ArriveForTest(third);
     }
     [Fact] public async Task Cancellation_and_reschedule_reuse_session_invoice_and_payment_coverage()
     {
         var plan=await PlanAsync(3);var request=Treatment(plan,1);request.PricingMode="Package";request.Deposit=100;request.PaymentMethod=PaymentMethod.Cash;
-        var first=await service.CreateAsync(request);await service.TransitionAsync(first.Appointments[0].Id,AppointmentStatus.Cancelled);
+        var first=await service.CreateAsync(request);await service.CloseUnattendedAsync(first.Appointments[0].Id, false, new(Guid.NewGuid().ToString(), "Synthetic patient requested cancellation"), "reception");
         var again=Treatment(plan,1);again.StartsAt=[start.AddDays(3)];var second=await service.CreateAsync(again);
         Assert.Equal(first.Appointments[0].TreatmentPlanSessionId,second.Appointments[0].TreatmentPlanSessionId);
         Assert.Equal(first.InvoiceIds,second.InvoiceIds);Assert.Equal(3,await db.Invoices.CountAsync());Assert.Equal(100,await db.Payments.SumAsync(p=>p.Amount));
@@ -77,7 +77,7 @@ public sealed partial class BookingDatabaseTests
         var plan=await PlanAsync(6,true);var patient=await db.Patients.FindAsync(patientId);patient!.InsuranceDetails!.CopayPercentage=copay;await db.SaveChangesAsync();
         var request=Treatment(plan,1);var receipt=await service.CreateAsync(request);Assert.Equal(400,receipt.TotalAmount);Assert.Equal(copay*4,receipt.PatientAmount);
         Assert.Equal(4,await db.Invoices.CountAsync());Assert.Equal(shortfall,(await new CourseFinanceService(db).GateAsync(receipt.Appointments[0].Id)).AdditionalPaymentRequired);
-        if(copay==0) await service.TransitionAsync(receipt.Appointments[0].Id,AppointmentStatus.InProgress);
+        if(copay==0) await ArriveForTest(receipt.Appointments[0].Id);
         Assert.All(await db.Invoices.ToListAsync(),i=>Assert.NotEqual(InvoiceStatus.Paid,i.Status));
     }
     [Fact] public async Task Insurance_earnings_claims_and_actual_settlements_remain_separate()
@@ -87,7 +87,7 @@ public sealed partial class BookingDatabaseTests
         var accounts=await finance.InsuranceAccountsAsync();Assert.Equal(320,accounts.Companies.Single().Planned);Assert.Equal(0,accounts.Companies.Single().Earned);
         var claimRequest=new SubmitInsuranceClaimRequest(Guid.NewGuid().ToString(),invoice," claim-001 ");
         await Assert.ThrowsAsync<BookingRuleException>(()=>finance.SubmitClaimAsync(claimRequest,"ceo"));
-        await service.TransitionAsync(id,AppointmentStatus.InProgress);await FinishClinicalForTest(id);await service.TransitionAsync(id,AppointmentStatus.Completed);
+        await ArriveForTest(id);await FinishClinicalForTest(id);await service.TransitionAsync(id,AppointmentStatus.Completed);
         var claim=await finance.SubmitClaimAsync(claimRequest,"ceo");Assert.Equal("claim-001",claim.SubmissionReference);Assert.Equal(claim.Id,(await finance.SubmitClaimAsync(claimRequest,"ceo")).Id);
         var settle=new SettleInsuranceClaimRequest(Guid.NewGuid().ToString(),30,PaymentMethod.Online,"settlement-001");
         await finance.SettleClaimAsync(claim.Id,settle);await finance.SettleClaimAsync(claim.Id,settle);

@@ -4,6 +4,8 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- Runtime patient uploads must never enter build or publish artifacts. -->
+		<DefaultItemExcludes>$(DefaultItemExcludes);wwwroot/uploads/**</DefaultItemExcludes>
 		<NuGetAudit>false</NuGetAudit>
 		<UserSecretsId>ab3365fb-b69c-41ee-8425-3bd89daf869e</UserSecretsId>
 	</PropertyGroup>
