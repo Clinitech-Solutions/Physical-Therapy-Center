@@ -14,6 +14,9 @@ namespace PTCenter.Infrastructure.Persistence.Configurations
             builder.HasKey(x => x.Id);
             builder.HasOne(x => x.Patient).WithMany(x => x.InsuranceDocuments).HasForeignKey(x => x.PatientId);
             builder.HasQueryFilter(x => !x.IsDeleted);
+            builder.Property(x=>x.UploadOperationKey).HasMaxLength(100);
+            builder.Property(x=>x.UploadBatchHash).HasMaxLength(64);
+            builder.HasIndex(x=>new{x.UploadOperationKey,x.UploadIndex}).IsUnique().HasFilter("[UploadOperationKey] IS NOT NULL");
 
         }
     }

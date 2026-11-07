@@ -16,6 +16,7 @@ public interface IPatientService
     Task<Result> DeleteAsync(int id);
 
     Task<Result<PatientResponse>> GetByIdAsync(int id);
+    Task<Result<PatientResponse>> GetByRegistrationKeyAsync(string key);
 
     Task<Result<PagedResponse<PatientResponse>>> GetAllAsync(
         PatientQueryRequest request);

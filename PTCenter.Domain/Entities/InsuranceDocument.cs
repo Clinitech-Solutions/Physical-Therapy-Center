@@ -8,6 +8,9 @@ public class InsuranceDocument : BaseEntity
     public string FilePath { get; set; } = null!;
     public string ContentType { get; set; } = null!;
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    public string? UploadOperationKey { get; set; }
+    public string? UploadBatchHash { get; set; }
+    public int? UploadIndex { get; set; }
 
     public Patient Patient { get; set; } = null!;
 }

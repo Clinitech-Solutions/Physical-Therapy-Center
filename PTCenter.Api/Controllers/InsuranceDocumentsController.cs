@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PTCenter.Application.Contracts.InsuranceDocument;
 using PTCenter.Application.Interfaces;
+using PTCenter.Api.Extensions;
 
 namespace PTCenter.Api.Controllers;
 
@@ -16,7 +17,7 @@ public class InsuranceDocumentsController(IInsuranceDocumentService documentServ
     public async Task<IActionResult> Add([FromForm] CreateInsuranceDocumentRequest request)
     {
         var result = await _documentService.AddRangeAsync(request);
-        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
+        return result.IsSuccess ? Ok(result.Value) : result.ToProblem();
     }
 
     [HttpGet]

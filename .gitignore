@@ -362,3 +362,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Runtime patient uploads stay on disk; only directory placeholders belong in Git.
+/PTCenter.Api/wwwroot/uploads/**
+!/PTCenter.Api/wwwroot/uploads/**/
+!/PTCenter.Api/wwwroot/uploads/**/.gitkeep

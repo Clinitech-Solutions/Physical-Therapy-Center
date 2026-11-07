@@ -17,7 +17,13 @@ public class BookingMigrationTests
         var retained=new[]{"20261031164400_DoctorClinicalWorkspace","20261104195622_ClinicianAbsenceRecovery",
             "20261106140342_ReleaseReadinessPatientRegistration","20261106160811_InsuranceChequeReceipts"};
         Assert.Equal(retained,chain.Where(retained.Contains).ToArray());
-        Assert.Equal(retained[^1],chain[^1]);
+        Assert.Equal("20261107120334_DocumentUploadRetrySafety",chain[^1]);
+        var draft=db.GetService<IMigrator>().GenerateScript(retained[^1],"20261107105511_AssessmentDraftPersistence");
+        Assert.Contains("ALTER TABLE [Assessments] ADD [DraftJson] nvarchar(max) NULL",draft);
+        Assert.DoesNotContain("UPDATE [",draft); Assert.DoesNotContain("DROP ",draft);
+        var upload=db.GetService<IMigrator>().GenerateScript("20261107105511_AssessmentDraftPersistence",chain[^1]);
+        Assert.Contains("[UploadOperationKey] nvarchar(100) NULL",upload);Assert.Contains("CREATE UNIQUE INDEX",upload);
+        Assert.DoesNotContain("UPDATE [",upload);Assert.DoesNotContain("DROP ",upload);Assert.DoesNotContain("DELETE ",upload);
         var sql=db.GetService<IMigrator>().GenerateScript(retained[1],retained[3],MigrationsSqlGenerationOptions.Idempotent);
         Assert.Contains("[RegistrationOperationKey]",sql);
         Assert.Contains("CREATE UNIQUE INDEX [IX_Patients_RegistrationOperationKey]",sql);

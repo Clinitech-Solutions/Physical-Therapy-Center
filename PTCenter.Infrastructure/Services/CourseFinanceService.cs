@@ -28,7 +28,7 @@ public partial class CourseFinanceService(ApplicationDbContext db)
         var sessions = await db.TreatmentPlanSessions.AsNoTracking().Where(s => s.TreatmentPlanId == planId).ToListAsync();
         var ids = sessions.Select(s => s.Id).ToList();
         var used = await db.Appointments.Where(a => a.TreatmentPlanSessionId != null && ids.Contains(a.TreatmentPlanSessionId.Value) &&
-            (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow))
+            (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled))
             .Select(a => a.TreatmentPlanSessionId!.Value).Distinct().ToListAsync();
         return Enumerable.Range(1, count).Where(number => !sessions.Any(s => s.SessionNumber == number && (s.Status == SessionStatus.Completed || used.Contains(s.Id)))).ToList();
     }
@@ -87,7 +87,7 @@ public partial class CourseFinanceService(ApplicationDbContext db)
             var otherAgreements = insurance ? await db.TreatmentCourseAgreements.AsNoTracking().Where(a => a.PatientId == patient.Id && a.FundingType == "Insurance").ToListAsync() : [];
             var legacyOutside = insurance ? await db.Appointments.CountAsync(a => a.PatientId == patient.Id && a.AppointmentType == "Session" &&
                 a.TreatmentPlanSession != null && a.TreatmentPlanSession.TreatmentPlanId != plan.Id &&
-                (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow) &&
+                (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled) &&
                 !db.TreatmentCourseAgreements.Any(c => c.TreatmentPlanId == a.TreatmentPlanSession.TreatmentPlanId)) : 0;
             var approvalAvailable = (patient.InsuranceDetails?.ApprovedSessions ?? 0) - otherAgreements.Sum(a => a.CoveredSessions) - legacyOutside;
             var count = insurance ? Math.Min(plan.PlannedSessions, approvalAvailable) : plan.PlannedSessions;

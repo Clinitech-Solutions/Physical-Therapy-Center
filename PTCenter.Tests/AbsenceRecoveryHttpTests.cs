@@ -70,6 +70,7 @@ public class AbsenceRecoveryHttpTests
         await DoctorWorkspaceFixture.LoginAsync(c, "clinical.senior"); Assert.Equal(HttpStatusCode.Forbidden, (await c.GetAsync($"/api/Doctor/appointments/{treatment}")).StatusCode);
         await DoctorWorkspaceFixture.LoginAsync(c, "clinical.otherSenior"); var workspace = await c.GetFromJsonAsync<DoctorPatientWorkspace>($"/api/Doctor/appointments/{treatment}"); Assert.True(workspace!.Visit.CoveringTreatment);
         Assert.Equal(HttpStatusCode.Conflict, (await c.PostAsJsonAsync($"/api/Doctor/appointments/{treatment}/start", new { })).StatusCode);
+        host.Clock.Now = new DateTimeOffset(Day.AddDays(1).ToDateTime(new TimeOnly(12, 0)), TimeSpan.FromHours(2));
         await ReceptionAccessFixture.LoginAsync(c); Assert.Equal(HttpStatusCode.OK, (await c.PutAsJsonAsync($"/api/Bookings/appointments/{treatment}/status", 4)).StatusCode);
         await DoctorWorkspaceFixture.LoginAsync(c, "clinical.otherSenior"); var started = await c.PostAsJsonAsync($"/api/Doctor/appointments/{treatment}/start", new { }); Assert.True(started.IsSuccessStatusCode, await started.Content.ReadAsStringAsync()); workspace = (await started.Content.ReadFromJsonAsync<DoctorPatientWorkspace>())!;
         var note = new NotesMutation(workspace.Notes.Version, "Saved Senior coverage progress", "Stable", "Well tolerated", "Existing treatment performed"); Assert.Equal(HttpStatusCode.OK, (await c.PutAsJsonAsync($"/api/Doctor/appointments/{treatment}/notes", note)).StatusCode);

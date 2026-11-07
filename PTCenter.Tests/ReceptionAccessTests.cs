@@ -201,16 +201,16 @@ public class ReceptionAccessTests
         try {
             await ReceptionAccessFixture.LoginAsync(client);
             Assert.Equal(HttpStatusCode.BadRequest,(await client.GetAsync("/api/InsuranceDocuments")).StatusCode);
-            using var form=new MultipartFormDataContent();form.Add(new StringContent("2"),"PatientId");form.Add(new ByteArrayContent(Encoding.UTF8.GetBytes("insurance test")),"Files","approval.txt");
+            using var form=new MultipartFormDataContent();form.Add(new StringContent("2"),"PatientId");form.Add(new ByteArrayContent(Encoding.UTF8.GetBytes("%PDF-1.7 insurance test")),"Files","approval.pdf");
             var upload=await client.PostAsync("/api/InsuranceDocuments/Add",form);Assert.Equal(HttpStatusCode.OK,upload.StatusCode);
             var id=(await upload.Content.ReadFromJsonAsync<JsonElement>())[0].GetProperty("id").GetInt32();
             Assert.Empty((await client.GetFromJsonAsync<JsonElement>("/api/InsuranceDocuments?patientId=1")).EnumerateArray());
             Assert.Single((await client.GetFromJsonAsync<JsonElement>("/api/InsuranceDocuments?patientId=2")).EnumerateArray());
-            Assert.Equal("insurance test",await client.GetStringAsync($"/api/InsuranceDocuments/{id}/file"));
+            Assert.Equal("%PDF-1.7 insurance test",await client.GetStringAsync($"/api/InsuranceDocuments/{id}/file"));
             client.DefaultRequestHeaders.Authorization=null;Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync($"/api/InsuranceDocuments/{id}/file")).StatusCode);
             await ReceptionAccessFixture.LoginAsync(client,"Patient");Assert.Equal(HttpStatusCode.Forbidden,(await client.GetAsync($"/api/InsuranceDocuments/{id}/file")).StatusCode);
             await ReceptionAccessFixture.LoginAsync(client);
-            using var update=new MultipartFormDataContent();update.Add(new ByteArrayContent([1,2,3]),"File","updated.txt");
+            using var update=new MultipartFormDataContent();update.Add(new ByteArrayContent(Encoding.ASCII.GetBytes("%PDF-1.7 updated")),"File","updated.pdf");
             Assert.Equal(HttpStatusCode.OK,(await client.PutAsync($"/api/InsuranceDocuments/{id}",update)).StatusCode);
             Assert.Equal(HttpStatusCode.OK,(await client.DeleteAsync($"/api/InsuranceDocuments/{id}")).StatusCode);
             Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"/api/InsuranceDocuments/{id}/file")).StatusCode);

@@ -18,6 +18,7 @@ public class Assessment : BaseEntity
     public string Priority { get; set; } = null!;
 
     public string? Notes { get; set; }
+    public string? DraftJson { get; set; }
 
     public DateTime AssessmentDate { get; set; } = DateTime.UtcNow;
 

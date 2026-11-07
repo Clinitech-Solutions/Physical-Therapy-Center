@@ -57,7 +57,7 @@ public static class DoctorWorkspaceFixture
         db.Patients.Add(patient);db.TreatmentPlans.Add(new(){Assessment=new(){Patient=patient,SeniorId=original.Assessment.SeniorId,Diagnosis="Saved",ConditionType="Physio",Priority="Routine",CompletedAt=DateTime.UtcNow},DoctorId=original.DoctorId,NumberOfSessions=3,FrequencyPerWeek=2,TreatmentType="Physio",Status=StatusPlan.Active});await db.SaveChangesAsync();return patient.Id;
     }
     public static async Task ArriveAsync(BookingTestHost host,int id)
-    {using var scope=host.Services.CreateScope();await scope.ServiceProvider.GetRequiredService<BookingService>().TransitionAsync(id,AppointmentStatus.InProgress);}
+    {using var scope=host.Services.CreateScope();var db=scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();var appointment=await db.Appointments.SingleAsync(a=>a.Id==id);host.Clock.Now=new DateTimeOffset(DateTime.SpecifyKind(appointment.StartTime,DateTimeKind.Utc));await scope.ServiceProvider.GetRequiredService<BookingService>().TransitionAsync(id,AppointmentStatus.InProgress);}
 }
 
 public class DoctorWorkspaceHttpTests

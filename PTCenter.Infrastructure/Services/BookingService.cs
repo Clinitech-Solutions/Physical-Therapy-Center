@@ -18,8 +18,10 @@ public class BookingRuleException(string code, string message, int status = 400,
 }
 
 /// <summary>Server-authoritative eligibility, availability and atomic booking/financial persistence.</summary>
-public partial class BookingService(ApplicationDbContext db)
+public partial class BookingService(ApplicationDbContext db, TimeProvider? clock = null)
 {
+    private DateTimeOffset CurrentInstant => (clock ?? TimeProvider.System).GetUtcNow();
+    private DateTime CurrentUtc => CurrentInstant.UtcDateTime;
     private static readonly TimeZoneInfo ClinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo");
     private static string Hash(object value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value))));
     private static BookingRuleException Rule(string code, string message, int status = 400, object? details = null) => new("Booking." + code, message, status, details);
@@ -53,7 +55,7 @@ public partial class BookingService(ApplicationDbContext db)
         var appointments = await db.Appointments.AsNoTracking().Where(a => a.TreatmentPlanSessionId != null && sessionIds.Contains(a.TreatmentPlanSessionId.Value)).ToListAsync();
         var funded = await db.Appointments.CountAsync(a => a.PatientId == patientId && a.AppointmentType == "Session" &&
             (a.InsuranceFunded || a.BookingBatchId == null && patient.PaymentType == "Insurance") &&
-            (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow));
+            (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled));
         var info = patient.InsuranceDetails;
         var result = new BookingContext(patientId, patient.ApplicationUser.FullName, patient.ApplicationUser.Gender.ToString(), patient.PaymentType,
             assessments.Any(a => a.CompletedAt != null), Insured(patient), info?.Status == InsuranceStatus.Approved && patient.InsuranceCompanyId != null,
@@ -61,9 +63,9 @@ public partial class BookingService(ApplicationDbContext db)
             assessments, plans.Select(p => {
                 var ids = sessions.Where(s => s.TreatmentPlanId == p.Id).Select(s => s.Id).ToHashSet();
                 var used = appointments.Where(a => ids.Contains(a.TreatmentPlanSessionId!.Value) &&
-                    (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow)).ToList();
+                    (a.ActualCheckIn != null || a.Status != AppointmentStatus.Cancelled)).ToList();
                 return new BookingPlan(p.Id, p.DoctorId, p.Doctor.FullName, p.TreatmentType, p.NumberOfSessions,
-                    used.Count(a => a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.NoShow),
+                    used.Count(a => a.Status != AppointmentStatus.Cancelled),
                     sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed),
                     Math.Max(0, p.NumberOfSessions - used.Select(a => a.TreatmentPlanSessionId).Distinct().Count() -
                         sessions.Count(s => s.TreatmentPlanId == p.Id && s.Status == SessionStatus.Completed && !used.Any(a => a.TreatmentPlanSessionId == s.Id))))
@@ -73,7 +75,7 @@ public partial class BookingService(ApplicationDbContext db)
         var finance = new CourseFinanceService(db);
         var reviews = await db.ReassessmentRequests.AsNoTracking().Where(r => r.PatientId == patientId && r.ReviewRequired).Select(r => new {r.TreatmentPlanId,r.RevisedPlanId}).ToListAsync();
         for(var index=0;index<result.Plans.Count;index++) {
-            var plan=result.Plans[index];plan.Financial = await finance.SummaryAsync(plan.Id); plan.StaffReviewRequired = reviews.Any(r => r.TreatmentPlanId == plan.Id || r.RevisedPlanId == plan.Id);
+            var plan=result.Plans[index];plan.Financial = await finance.SummaryAsync(plan.Id); plan.StaffReviewRequired = appointments.Any(a => a.Status == AppointmentStatus.NoShow && sessions.Any(s => s.Id == a.TreatmentPlanSessionId && s.TreatmentPlanId == plan.Id)) || reviews.Any(r => r.TreatmentPlanId == plan.Id || r.RevisedPlanId == plan.Id);
             if(plan.Financial!=null)result.Plans[index]=plan with{RemainingSessions=Math.Min(plan.RemainingSessions,(await finance.AvailableNumbersAsync(plan.Id,plan.Financial.CoveredSessions)).Count)};
         }
         return result;
@@ -318,7 +320,7 @@ public partial class BookingService(ApplicationDbContext db)
         foreach (var course in await db.TreatmentCourseAgreements.AsNoTracking().OrderByDescending(a => a.Id).ToListAsync())
         {
             var summary = (await new CourseFinanceService(db).SummaryAsync(course.TreatmentPlanId))!;
-            var name = await db.Patients.Where(p => p.Id == course.PatientId).Select(p => p.ApplicationUser.FullName).SingleAsync();
+            var name = await db.Patients.IgnoreQueryFilters().Where(p => p.Id == course.PatientId).Select(p => p.ApplicationUser.FullName).SingleAsync();
             result.Add(new($"course:{course.Id}", course.PatientId, name, course.PricingMode, summary.TotalAmount, summary.DiscountAmount,
                 summary.PatientAmount, summary.InsuranceAmount, summary.PaidAmount, summary.RemainingAmount,
                 await db.Invoices.Where(i => i.CourseAgreementId == course.Id).Select(i => i.Id).ToListAsync(), JsonSerializer.Deserialize<List<InstallmentRequest>>(course.InstallmentsJson) ?? []));
@@ -326,7 +328,7 @@ public partial class BookingService(ApplicationDbContext db)
         foreach (var batch in batches)
         {
             var receipt = await ReceiptAsync(batch.IdempotencyKey);
-            var name = await db.Patients.Where(p => p.Id == batch.PatientId).Select(p => p.ApplicationUser.FullName).SingleAsync();
+            var name = await db.Patients.IgnoreQueryFilters().Where(p => p.Id == batch.PatientId).Select(p => p.ApplicationUser.FullName).SingleAsync();
             result.Add(new(batch.IdempotencyKey, batch.PatientId, name, batch.PricingMode, batch.TotalAmount, batch.Discount,
                 receipt.PatientAmount, receipt.InsuranceAmount, receipt.PaidAmount, receipt.RemainingAmount, receipt.InvoiceIds, receipt.Installments));
         }
@@ -404,9 +406,14 @@ public partial class BookingService(ApplicationDbContext db)
         var appointment = await db.Appointments.Include(a => a.TreatmentPlanSession).SingleOrDefaultAsync(a => a.Id == id)
             ?? throw Rule("AppointmentNotFound", "Appointment was not found.", 404);
         if (!Enum.IsDefined(status)) throw Rule("InvalidStatus", "Invalid appointment status.");
+        if (status is AppointmentStatus.Cancelled or AppointmentStatus.NoShow)
+            throw Rule("ReasonedActionRequired", "Use the separate cancellation or no-show action with a reason and a stable operation key.", 409);
         if (appointment.Status == status) return; // A replay cannot stamp new actual times or complete a session twice.
         if (status == AppointmentStatus.InProgress && appointment.Status == AppointmentStatus.Pending)
         {
+            if (DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(appointment.StartTime, DateTimeKind.Utc), ClinicTimeZone)) !=
+                DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(CurrentInstant, ClinicTimeZone).DateTime))
+                throw Rule("ArrivalDate", "Arrival is allowed only on the scheduled appointment date in Africa/Cairo.", 409);
             if (appointment.AppointmentType != "Session") await RequireNotAbsentAsync(appointment);
             if (appointment.TreatmentStartedAt != null || appointment.TreatmentEndedAt != null || appointment.ActualCheckOut != null ||
                 appointment.TreatmentPlanSession is { Status: not SessionStatus.Pending })
@@ -424,18 +431,17 @@ public partial class BookingService(ApplicationDbContext db)
             var roomCapacity = await db.Rooms.Where(r=>r.Id==appointment.RoomId && r.IsActive).Select(r=>r.Capacity).SingleOrDefaultAsync();
             var roomLoad = await db.Appointments.CountAsync(a=>a.Id!=id && a.RoomId==appointment.RoomId && a.ActualCheckIn!=null && a.ActualCheckOut==null);
             if(roomCapacity<=roomLoad) throw Rule("ActualOccupancy","The room has no remaining places. Record departure or choose another room before arrival.",409);
-            appointment.ActualCheckIn = DateTime.UtcNow;
+            appointment.ActualCheckIn = CurrentUtc;
             if (appointment.TreatmentPlanSession != null) { appointment.TreatmentPlanSession.CheckIn = appointment.ActualCheckIn; appointment.TreatmentPlanSession.Status = SessionStatus.Pending; }
         }
         else if (status == AppointmentStatus.Completed && appointment.Status == AppointmentStatus.InProgress && appointment.ActualCheckIn != null)
         {
             if (appointment.AppointmentType == "Session" && appointment.TreatmentEndedAt == null)
                 throw Rule("TreatmentNotFinished", "The assigned Doctor must explicitly end treatment before patient departure.", 409);
-            appointment.ActualCheckOut = DateTime.UtcNow;
+            appointment.ActualCheckOut = CurrentUtc;
             if (appointment.TreatmentPlanSession is { } session) session.CheckOut = appointment.ActualCheckOut;
             // Physical departure does not sign or deliver an assessment. Clinical signoff owns DeliveredAt.
         }
-        else if ((status == AppointmentStatus.Cancelled || status == AppointmentStatus.NoShow) && appointment.Status == AppointmentStatus.Pending) { }
         else throw Rule("InvalidTransition", "This status transition is not allowed. Check-in and check-out are separate staff actions.", 409);
         appointment.Status = status;
         await db.SaveChangesAsync(); await transaction.CommitAsync();
@@ -465,6 +471,7 @@ public partial class BookingService(ApplicationDbContext db)
         var assessment = existing ?? new Assessment { AppointmentId = appointment.Id, PatientId = patient.Id, SeniorId = appointment.SeniorId!, CreatedBy = actor };
         assessment.Diagnosis = request.Diagnosis.Trim(); assessment.ConditionType = request.TreatmentType;
         assessment.Priority = "Routine"; assessment.CompletedAt = DateTime.UtcNow; assessment.AssessmentDate = DateTime.UtcNow; assessment.UpdatedBy = actor;
+        assessment.DraftJson = null;
         var plan = existing?.TreatmentPlan;
         if (plan != null)
         {

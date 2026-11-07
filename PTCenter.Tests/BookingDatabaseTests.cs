@@ -18,6 +18,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
     private BookingService service = null!;
     private int patientId;
     private readonly DateTimeOffset start = new(2030, 2, 4, 10, 0, 0, TimeSpan.Zero);
+    private readonly TestClinicClock clinicClock = new(new DateTimeOffset(2030, 2, 4, 9, 50, 0, TimeSpan.Zero));
     public async Task InitializeAsync()
     {
         await connection.OpenAsync();
@@ -27,6 +28,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
             new ApplicationUser { Id="patient", FullName="Test patient", UserName="test.patient", Gender=Gender.Male },
             new ApplicationUser { Id="senior", FullName="Senior", UserName="test.senior", Gender=Gender.Male },
             new ApplicationUser { Id="doctor", FullName="Doctor", UserName="test.doctor", Gender=Gender.Male },
+            new ApplicationUser { Id="reception", FullName="Reception", UserName="test.reception", Gender=Gender.Male },
             new ApplicationUser { Id="female", FullName="Female Senior", UserName="test.female", Gender=Gender.Female }
         };
         db.Users.AddRange(users);
@@ -38,9 +40,15 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         db.Rooms.Add(new Room{Id=1,Name="Room",Capacity=1,IsActive=true});
         for(var day=0;day<7;day++) foreach(var clinician in new[]{"senior","doctor","female"})
             db.DoctorSchedules.Add(new DoctorSchedule{DoctorId=clinician,DayOfWeek=day,StartTime=new(8,0),EndTime=new(20,0)});
-        await db.SaveChangesAsync(); patientId=patient.Id; service=new(db);
+        await db.SaveChangesAsync(); patientId=patient.Id; service=new(db, clinicClock);
     }
     public async Task DisposeAsync(){await db.DisposeAsync();await connection.DisposeAsync();}
+    private async Task ArriveForTest(int id)
+    {
+        var appointment = await db.Appointments.AsNoTracking().SingleAsync(a => a.Id == id);
+        clinicClock.Now = new DateTimeOffset(DateTime.SpecifyKind(appointment.StartTime, DateTimeKind.Utc)).AddMinutes(-5);
+        await service.TransitionAsync(id, AppointmentStatus.InProgress);
+    }
     private BookingRequest Assessment(string charge="Free") => new(){IdempotencyKey=Guid.NewGuid().ToString(),PatientId=patientId,ClinicianId="senior",RoomId=1,StartsAt=[start],AssessmentCharge=charge};
     private async Task<int> PlanAsync(int count=6, bool insurance=false)
     {
@@ -69,6 +77,20 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         Assert.Empty(await db.Payments.ToListAsync());
         var appointment=await db.Appointments.SingleAsync();Assert.Equal(TimeSpan.FromHours(1),appointment.EndTime-appointment.StartTime);
         Assert.Null(appointment.ActualCheckOut);
+    }
+    [Fact] public async Task Legacy_archived_patient_does_not_hide_or_break_saved_financial_accounts()
+    {
+        var assessment=Assessment("Paid");assessment.UnitPrice=100;assessment.Deposit=40;assessment.PaymentMethod=PaymentMethod.Cash;
+        await service.CreateAsync(assessment);
+        var plan=await PlanAsync();var request=Treatment(plan,1);request.StartsAt=[start.AddDays(2)];request.Deposit=40;request.PaymentMethod=PaymentMethod.Cash;
+        await service.CreateAsync(request);
+        // Legacy state produced by the former deletion bug; no acceptance result is repaired.
+        var legacy=(await db.Patients.FindAsync(patientId))!;legacy.IsDeleted=true;legacy.DeletedAt=DateTime.UtcNow;await db.SaveChangesAsync();
+        var accounts=await service.AccountsAsync();Assert.Equal(2,accounts.Count);
+        Assert.All(accounts,a=>Assert.Equal("Test patient",a.PatientName));
+        Assert.Equal(80,accounts.Sum(a=>a.PaidAmount));Assert.Equal(120,accounts.Sum(a=>a.RemainingAmount));
+        Assert.Equal(2,await db.Invoices.CountAsync());Assert.Equal(2,await db.Payments.CountAsync());
+        Assert.True((await db.Patients.IgnoreQueryFilters().SingleAsync(p=>p.Id==patientId)).IsDeleted);
     }
     [Fact] public async Task Paid_assessment_requires_explicit_price_and_booking_is_not_payment()
     {
@@ -134,16 +156,16 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
     {
         var request=Treatment(await PlanAsync(),1);request.Deposit=100;request.PaymentMethod=PaymentMethod.Cash;
         var receipt=await service.CreateAsync(request);var id=receipt.Appointments[0].Id;
-        await service.TransitionAsync(id,AppointmentStatus.InProgress);
+        await ArriveForTest(id);
         var appointment=await db.Appointments.SingleAsync();var entered=appointment.ActualCheckIn;
-        await service.TransitionAsync(id,AppointmentStatus.InProgress);Assert.Equal(entered,appointment.ActualCheckIn);Assert.Null(appointment.ActualCheckOut);
+        await ArriveForTest(id);Assert.Equal(entered,appointment.ActualCheckIn);Assert.Null(appointment.ActualCheckOut);
         await FinishClinicalForTest(id);await service.TransitionAsync(id,AppointmentStatus.Completed);await FinishClinicalForTest(id);await service.TransitionAsync(id,AppointmentStatus.Completed);
         Assert.NotNull(appointment.ActualCheckOut);Assert.Equal(1,(await db.TreatmentPlans.SingleAsync()).CompletedSessions);
     }
     [Fact] public async Task Completed_assessment_and_plan_are_saved_atomically_by_assigned_Senior()
     {
         var receipt=await service.CreateAsync(Assessment());var id=receipt.Appointments[0].Id;
-        await service.TransitionAsync(id,AppointmentStatus.InProgress);
+        await ArriveForTest(id);
         var request=new CompleteAssessmentRequest{AppointmentId=id,Diagnosis="Diagnosis",DoctorId="doctor",NumberOfSessions=5,FrequencyPerWeek=2};
         await Assert.ThrowsAsync<BookingRuleException>(()=>service.CompleteAssessmentAsync(request,"other",false));
         var plan=await service.CompleteAssessmentAsync(request,"senior",false);var replay=await service.CompleteAssessmentAsync(request,"senior",false);
@@ -216,13 +238,13 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
     {
         var request=Treatment(await PlanAsync(),2);request.Deposit=200;request.PaymentMethod=PaymentMethod.Cash;
         var receipt=await service.CreateAsync(request);
-        await service.TransitionAsync(receipt.Appointments[0].Id,AppointmentStatus.InProgress);
+        await ArriveForTest(receipt.Appointments[0].Id);
         // Use the fixture's clinical clock so this occupancy check does not depend on the machine's current shift.
         var current=await db.Appointments.FindAsync(receipt.Appointments[0].Id);current!.ActualCheckIn=start.UtcDateTime.AddHours(-2);current.StartTime=start.UtcDateTime.AddHours(-3);current.EndTime=start.UtcDateTime.AddHours(-2);await db.SaveChangesAsync();
-        var error=await Assert.ThrowsAsync<BookingRuleException>(()=>service.TransitionAsync(receipt.Appointments[1].Id,AppointmentStatus.InProgress));
+        var error=await Assert.ThrowsAsync<BookingRuleException>(()=>ArriveForTest(receipt.Appointments[1].Id));
         Assert.Equal("Booking.ActualOccupancy",error.Code);Assert.Null(current.ActualCheckOut);
         await FinishClinicalForTest(current.Id);await service.TransitionAsync(current.Id,AppointmentStatus.Completed);
-        await service.TransitionAsync(receipt.Appointments[1].Id,AppointmentStatus.InProgress);
+        await ArriveForTest(receipt.Appointments[1].Id);
     }
     [Fact] public async Task A_new_assessment_requires_rescheduling_the_existing_active_appointment()
     {
@@ -247,7 +269,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
         Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
         Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start.AddHours(1)] })).Value);
         Assert.Empty((await rooms.GetAvailableAsync(new() { StartsAt = [start.AddDays(1), start] })).Value);
-        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.Cancelled);
+        await service.CloseUnattendedAsync(receipt.Appointments[0].Id, false, new(Guid.NewGuid().ToString(), "Synthetic patient requested cancellation"), "reception");
         Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
     }
 
@@ -255,7 +277,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
     {
         var rooms = new RoomService(db);
         var receipt = await service.CreateAsync(Assessment());
-        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.InProgress);
+        await ArriveForTest(receipt.Appointments[0].Id);
         var appointment = await db.Appointments.FindAsync(receipt.Appointments[0].Id);
         appointment!.StartTime = DateTime.UtcNow.AddHours(-3); appointment.EndTime = DateTime.UtcNow.AddHours(-2);
         await db.SaveChangesAsync();
@@ -271,7 +293,7 @@ public sealed partial class BookingDatabaseTests : IAsyncLifetime
     {
         var rooms = new RoomService(db);
         var receipt = await service.CreateAsync(Assessment());
-        await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.InProgress);
+        await ArriveForTest(receipt.Appointments[0].Id);
         await service.TransitionAsync(receipt.Appointments[0].Id, AppointmentStatus.Completed);
         Assert.Single((await rooms.GetAvailableAsync(new() { StartsAt = [start] })).Value);
         Assert.True((await service.PreviewAsync(Assessment())).CanSave);

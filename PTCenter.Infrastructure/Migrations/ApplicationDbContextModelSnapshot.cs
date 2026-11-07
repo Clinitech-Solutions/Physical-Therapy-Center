@@ -60,6 +60,9 @@ namespace PTCenter.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DraftJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -1178,12 +1181,27 @@ namespace PTCenter.Infrastructure.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("UploadBatchHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("UploadIndex")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UploadOperationKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime>("UploadedAt")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
                     b.HasIndex("PatientId");
+
+                    b.HasIndex("UploadOperationKey", "UploadIndex")
+                        .IsUnique()
+                        .HasFilter("[UploadOperationKey] IS NOT NULL");
 
                     b.ToTable("InsuranceDocuments");
                 });

@@ -2,10 +2,12 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PTCenter.Domain.Entities.Enums;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
 namespace PTCenter.Infrastructure.Persistence;
 
-public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options)
+public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IHttpContextAccessor? requestContext=null) : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<ApplicationUser> ApplicationUsers { get; set; } = null!;
     
@@ -70,6 +72,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     private void ApplySoftDelete()
     {
+        var user=requestContext?.HttpContext?.User;
+        var actor=user?.Identity?.IsAuthenticated==true && new[]{"Receptionist","Senior","Doctor","Ceo","Admin","Owner"}.Any(user.IsInRole)
+            ? user.FindFirstValue(ClaimTypes.NameIdentifier) : null;
         foreach (var e in ChangeTracker.Entries<BaseEntity>())
         {
             if (e.State == EntityState.Deleted)
@@ -79,9 +84,15 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 e.Entity.DeletedAt = DateTime.UtcNow;
             }
             if (e.State == EntityState.Added)
+            {
                 e.Entity.CreatedAt = DateTime.UtcNow;
+                if(actor!=null)e.Entity.CreatedBy=actor;
+            }
             if (e.State == EntityState.Modified)
+            {
                 e.Entity.UpdatedAt = DateTime.UtcNow;
+                if(actor!=null)e.Entity.UpdatedBy=actor;
+            }
         }
     }
 }
